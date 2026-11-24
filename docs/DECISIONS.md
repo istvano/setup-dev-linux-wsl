@@ -120,3 +120,34 @@ lockfile with checksums) is an open task in `TASKS.md`.
 Consequences: updates are pin bumps in that file, not `brew upgrade`. The upstream
 tag is `rust-v<version>`; the aqua registry strips the prefix, so the pin is the bare
 version. `tests/placement-policy.sh` asserts the pin and that it is not floating.
+
+## ADR-010: Opt-in security-scan, cloud and docs profiles; krew plugins
+
+Status: accepted. From the comparison of the operator's older Linux repositories and
+setup-dev-mac with this one.
+
+Decision: five opt-in profiles join `VALID_PROFILES`, none in `DEFAULT_PROFILES`, so
+the 70-entry default cap (ADR-008) is untouched: `security-scan` (syft, grype,
+osv-scanner, trufflehog, dive, cosign, nmap), `cloud` (opentofu, terraform-docs,
+terragrunt), `cloud-aws` (awscli, granted), `cloud-azure` (kubelogin) and `docs` (d2,
+pandoc). Every formula was checked on 2026-11-24 against `formulae.brew.sh` for an
+`x86_64_linux` bottle; CI's formula-availability step now renders all of them.
+
+Deferred, with the reason: `cloud-gcp` is not created. `gcloud-cli` is a cask in
+homebrew-core (a macOS archive and installer script) and there is no Linux formula.
+`azure-cli` is likewise a macOS-only cask now (its download is the `macos-arm64`
+tarball), so `cloud-azure` carries `kubelogin` alone, which is a standalone binary.
+Both come from the vendors' signed apt repositories with the vendor-apt machinery, and
+both are in `TASKS.md`. setup-dev-mac lists `azure-cli` as a formula; that line does
+not resolve today (reported to the operator, not touched from here).
+
+krew: the `kubernetes` profile (default) installs `neat`, `view-secret`, `tree`,
+`whoami` and `images` through `run_onchange_after_28_krew-plugins`, a narrow exception
+to ADR-003 because krew's index pins each plugin's version and URL. All five publish
+linux/amd64. A failed install fails the hook so chezmoi retries it on the next apply,
+as the runtimes hook does. `sniff` and `popeye` from the Mac list are not carried:
+sniff needs packet-capture privileges in the pod and popeye is stale.
+
+Also: `wget` and `libxml2-utils` join the apt base (the curl-pipe-shell refutation
+concerns pipes, not the package), and `docs/DROPPED.md` records tools deliberately
+not adopted, so the question is not reopened by accident.

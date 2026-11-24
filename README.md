@@ -40,11 +40,17 @@ must include `core`. Run it as your normal user, never as root. Existing files t
 | kubernetes | yes | Kubernetes client tooling |
 | backup | yes | Backup of non-git state in `$HOME` |
 | productivity-extra | no | Optional extra utilities |
+| security-scan | no | Host scanners: syft, grype, osv-scanner, trufflehog, dive, cosign, nmap |
+| cloud | no | OpenTofu, terraform-docs, terragrunt |
+| cloud-aws | no | AWS CLI and Granted SSO sessions |
+| cloud-azure | no | kubelogin (azure-cli and gcloud wait for the vendor-apt milestone) |
+| docs | no | d2 and pandoc for diagrams and documents |
 
 ## Documentation
 
 - [Architecture](docs/ARCHITECTURE.md)
 - [Decisions](docs/DECISIONS.md)
+- [Dropped tools and approaches](docs/DROPPED.md)
 - [Operations](docs/OPERATIONS.md)
 - [Tasks](TASKS.md)
 - [Agent instructions](AGENTS.md)

@@ -12,6 +12,11 @@ VALID_PROFILES=(
   kubernetes
   backup
   productivity-extra
+  security-scan
+  cloud
+  cloud-aws
+  cloud-azure
+  docs
 )
 
 validate_profiles() {

@@ -10,5 +10,7 @@ gnupg            # apt key handling for vendor repos (not used for signing)
 socat            # relay for the WSL-to-Windows LM Studio bridge (spec 8.2, local-llm profile, a later milestone)
 uidmap           # newuidmap/newgidmap for rootless container tooling
 unzip            # archive extraction for tool downloads
+wget             # fallback HTTP client some vendor tools and scripts expect; never piped into a shell
+libxml2-utils    # xmllint for validating and formatting XML
 zsh              # default interactive shell
 locales          # locale generation so UTF-8 locales exist in minimal images
