@@ -2,9 +2,14 @@
 # Report whether this machine matches the repository. Runs every check, prints one line
 # each, exits 1 if any failed. Changes nothing.
 #
-# Usage: script/verify [--target wsl|linux] [--profiles CSV] [--shell zsh|fish]
-# The target defaults to the detected one; profiles and shell to the repository defaults
-# (pass what bootstrap installed so the package check compares like with like).
+# Usage: script/verify [--target wsl|linux]   (default: detected)
+#
+# Profiles and shell are read from the chezmoi data that ./bootstrap recorded, so the
+# package check compares against what this machine was set up with, not against the
+# repository defaults. Without an initialised chezmoi there is nothing to compare to,
+# and verify says so and fails.
+#
+# Read-only: it writes no file (the package check renders to a temporary file).
 #
 # The login-shell report is informational and never fails: the repository never
 # changes the account login shell.
@@ -14,7 +19,6 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 source "$ROOT/script/lib/common.sh"
 
 target=""
-package_args=()
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --target)
@@ -22,18 +26,21 @@ while [[ $# -gt 0 ]]; do
       target="$2"
       shift 2
       ;;
-    --profiles | --shell)
-      require_value "$1" "${2:-}"
-      package_args+=("$1" "$2")
-      shift 2
-      ;;
-    *) die "Usage: script/verify [--target wsl|linux] [--profiles CSV] [--shell zsh|fish]" ;;
+    *) die "Usage: script/verify [--target wsl|linux]" ;;
   esac
 done
 [[ -n "$target" ]] || target="$(detect_target)"
 [[ "$target" == wsl || "$target" == linux ]] || die "Unknown --target: $target"
 
 activate_homebrew || true
+
+config="$(chezmoi_config_path)"
+[[ -f "$config" ]] || die "chezmoi is not initialised ($config is missing); run ./bootstrap apply first."
+profiles="$(chezmoi_data '.profiles | join ","')" ||
+  die "Cannot read [data] profiles from $config; run ./bootstrap apply to regenerate it."
+shell_choice="$(chezmoi_data '.shell')" ||
+  die "Cannot read [data] shell from $config; run ./bootstrap apply to regenerate it."
+package_args=(--profiles "$profiles" --shell "$shell_choice")
 # mise shims are not on PATH until the shell rc runs; the Homebrew mise is enough.
 failures=0
 
@@ -76,7 +83,7 @@ check "platform: x86_64" require_x86_64
 check "platform: target is $target" require_target "$target"
 check "apt base packages" "$ROOT/script/apt-base" --check
 check "Homebrew" "$ROOT/script/install-homebrew" --check
-check "Homebrew packages" "$ROOT/script/packages" "${package_args[@]+"${package_args[@]}"}" --check
+check "Homebrew packages ($profiles, $shell_choice)" "$ROOT/script/packages" "${package_args[@]}" --check
 check "mise runtimes installed" mise_missing
 check "uv" uv --version
 # Scripts are excluded: the run_after hooks run on every apply by design, so chezmoi

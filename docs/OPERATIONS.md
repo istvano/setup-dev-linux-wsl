@@ -47,10 +47,27 @@ fails if it finds git repositories under `/mnt`.
 `./bootstrap apply` is idempotent: apt and Homebrew skip what is installed, and
 nothing is ever uninstalled. Before chezmoi writes, every existing file it would
 change is copied to `<file>.backup.<UTC timestamp>`; brand-new files need no backup.
-`./bootstrap plan` changes nothing: it runs only the `--check` forms and, once
-chezmoi is initialised, `chezmoi diff`. `./script/verify` reports each check and
-exits 1 if any failed. Its chezmoi check ignores scripts, because the SSH hooks run
-on every apply by design. The login-shell line is informational.
+If `~/.config/chezmoi/chezmoi.toml` points at a different source directory it is
+backed up too, before `chezmoi init` rewrites it.
+
+Once `~/.config/chezmoi/chezmoi.toml` exists, its `[data]` section is the record of
+how this machine was set up, and chezmoi keeps those values whatever flags you pass.
+So bootstrap treats it as the source of truth:
+
+- Options you leave out (`--profiles`, `--shell`, `--git-name`, `--git-email`) default
+  to the recorded values, and a plain `./bootstrap apply` re-run reproduces the same
+  machine.
+- An option that disagrees with the record fails before anything runs, naming the
+  file and the `[data]` key (`profiles`, `shell`, `gitName`, `gitEmail`). To change
+  one, edit that key in the file, then re-run with the new value.
+
+`./bootstrap plan` and `./script/verify` change nothing: they run only the `--check`
+forms (the package check renders its Brewfile to a temporary file) and, once chezmoi
+is initialised, `chezmoi diff`. `./script/verify` reads profiles and shell from the
+same record, so it checks what this machine was set up with, and it fails with a
+clear message if chezmoi is not initialised. It reports each check and exits 1 if
+any failed. Its chezmoi check ignores scripts, because the SSH hooks run on every
+apply by design. The login-shell line is informational.
 
 Install, update and recovery procedures beyond this are added as they are built.
 

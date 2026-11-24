@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Install the selected profiles' formulae with Homebrew Bundle. Renders the Brewfile
 # to its default location first, so what is installed is exactly what was reviewed.
+# --check renders to a temporary file instead and writes nothing persistent.
 # Nothing is ever uninstalled; that is deliberate.
 #
 # Usage: script/packages [--profiles CSV] [--shell zsh|fish] [--check]
@@ -32,11 +33,16 @@ done
 
 activate_homebrew || die "Homebrew is not installed; run script/install-homebrew first."
 
+if ((check_only)); then
+  # --check must write nothing a user would find: render to a temporary file, not the
+  # default location, so plan and verify leave the machine untouched.
+  brewfile="$(mktemp)"
+  trap 'rm -f "$brewfile"' EXIT
+  "$ROOT/script/render-brewfile" "${render_args[@]+"${render_args[@]}"}" --output "$brewfile"
+  brew bundle check --file "$brewfile" --verbose
+  exit
+fi
 brewfile="$(default_brewfile_path)"
 "$ROOT/script/render-brewfile" "${render_args[@]+"${render_args[@]}"}" --output "$brewfile"
-
-if ((check_only)); then
-  exec brew bundle check --file "$brewfile" --verbose
-fi
 brew bundle install --file "$brewfile"
 success "Packages installed from $brewfile."

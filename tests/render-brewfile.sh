@@ -86,14 +86,26 @@ if [[ "${1-}" == shellenv ]]; then
   exit 0
 fi
 printf '%s\n' "$*" >>"$BREW_LOG"
+# Keep a copy of the Brewfile brew was asked about: --check renders a temp file that
+# is gone by the time the script returns.
+if [[ "${1-}" == bundle && "${2-}" == check ]]; then cp "$4" "$BREW_LOG.file"; fi
 STUBEOF
 chmod +x "$STUB/bin/brew"
 export BREW_LOG="$TMP/brew.log"
 BREW_PREFIX="$STUB" XDG_CONFIG_HOME="$TMP/xdg" "$PACKAGES" --check --profiles core --shell fish >/dev/null
-rendered="$TMP/xdg/setup-dev-linux-wsl/Brewfile"
-assert_match '^# Profiles: core$' "$rendered"
-assert_match '^# ---- shell-fish\.Brewfile ----$' "$rendered"
-assert_match "^bundle check --file $rendered --verbose$" "$BREW_LOG"
+# R17: --check writes nothing at the default Brewfile path (nor its directory).
+[[ ! -e "$TMP/xdg/setup-dev-linux-wsl/Brewfile" ]] || {
+  echo "packages --check wrote the default Brewfile" >&2
+  exit 1
+}
+[[ ! -e "$TMP/xdg" ]] || {
+  echo "packages --check created the config directory" >&2
+  exit 1
+}
+assert_match '^# Profiles: core$' "$BREW_LOG.file"
+assert_match '^# ---- shell-fish\.Brewfile ----$' "$BREW_LOG.file"
+assert_match "^bundle check --file /.* --verbose$" "$BREW_LOG"
+refute_match "xdg" "$BREW_LOG"
 refute_command 'packages: missing Homebrew accepted' env BREW_PREFIX="$TMP/none" "$PACKAGES" --check
 
 echo 'render-brewfile tests passed.'

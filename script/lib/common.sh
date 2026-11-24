@@ -172,3 +172,19 @@ activate_homebrew() {
 default_brewfile_path() {
   printf '%s\n' "${XDG_CONFIG_HOME:-$HOME/.config}/setup-dev-linux-wsl/Brewfile"
 }
+
+# --- chezmoi data ------------------------------------------------------------------
+# Once a chezmoi config exists it is the record of what this machine was set up with:
+# the template's prompt*Once functions return the stored value and ignore flags. So
+# bootstrap and verify read it rather than guess.
+chezmoi_config_path() {
+  printf '%s\n' "${XDG_CONFIG_HOME:-$HOME/.config}/chezmoi/chezmoi.toml"
+}
+
+# chezmoi_data TEMPLATE_EXPR: print the expression's value from the chezmoi data, e.g.
+# chezmoi_data '.shell' or chezmoi_data '.profiles | join ","'. Fails when chezmoi
+# is missing or the key is absent.
+chezmoi_data() {
+  command_exists chezmoi || return 1
+  chezmoi execute-template "{{ $1 }}"
+}

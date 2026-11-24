@@ -19,8 +19,11 @@ B="$ROOT/bootstrap"
 
 # --- Argument refusals. The fixtures make the machine look supported (Ubuntu 26.04,
 # x86_64, plain Linux), so each refusal is for the argument and not for the host.
+# HOME is a fresh temporary directory so the operator's own chezmoi config is never read.
+HOME_T="$(mktemp -d)"
+trap 'rm -rf "$HOME_T"' EXIT
 bs() {
-  env -u WSL_DISTRO_NAME OS_RELEASE_FILE="$FX/os-release/ubuntu-26.04" UNAME_M=x86_64 \
+  env -u WSL_DISTRO_NAME -u XDG_CONFIG_HOME HOME="$HOME_T" OS_RELEASE_FILE="$FX/os-release/ubuntu-26.04" UNAME_M=x86_64 \
     KERNEL_OSRELEASE_FILE="$FX/osrelease/plain" "$B" "$@"
 }
 # refuse DESCRIPTION EXPECTED_STDERR_FRAGMENT ARGS...
@@ -37,6 +40,23 @@ refuse() {
   }
 }
 refute_command "bootstrap with no subcommand must fail" "$B"
+# Exit codes: argument errors are 1, --help is 0.
+rc=0
+"$B" >/dev/null 2>&1 || rc=$?
+[[ "$rc" -eq 1 ]] || {
+  echo "bootstrap with no arguments must exit 1, got $rc" >&2
+  exit 1
+}
+rc=0
+"$B" frobnicate >/dev/null 2>&1 || rc=$?
+[[ "$rc" -eq 1 ]] || {
+  echo "unknown subcommand must exit 1, got $rc" >&2
+  exit 1
+}
+"$B" --help >/dev/null || {
+  echo "--help must exit 0" >&2
+  exit 1
+}
 refuse "unknown subcommand" "Usage" frobnicate
 refuse "--target mac" "Unknown --target" apply --target mac
 refuse "--target wsl on plain linux" "Requested --target wsl" apply --target wsl
@@ -49,7 +69,7 @@ refuse "option swallowed as a value" "requires a value" apply --profiles --shell
 
 # chezmoi's --promptString is a comma-separated key=value list, so a comma or '='
 # in a value would be mangled into another key. Reject, naming the problem.
-for bad in 'A,B' 'A=B'; do
+for bad in 'A,B' 'A=B' 'A"B'; do
   err="$(bs apply --non-interactive --git-name "$bad" --git-email t@example.invalid 2>&1 || true)"
   [[ "$err" == *"must not contain"* ]] || {
     printf 'git-name %q: expected a comma/= rejection, got: %s\n' "$bad" "$err" >&2
@@ -57,9 +77,56 @@ for bad in 'A,B' 'A=B'; do
   }
 done
 
+# --- A recorded chezmoi config is the source of truth: a conflicting flag fails closed
+# before any step runs, naming the config file and the [data] key to edit.
+if command -v chezmoi >/dev/null 2>&1; then
+  env -u XDG_CONFIG_HOME HOME="$HOME_T" chezmoi init --source "$ROOT/chezmoi" --promptDefaults \
+    --promptString 'Git user.name=Rec,Git user.email=rec@example.invalid' \
+    --promptMultichoice 'Workstation profiles=core' >/dev/null 2>&1
+  [[ -f "$HOME_T/.config/chezmoi/chezmoi.toml" ]] || {
+    echo "test setup: chezmoi init wrote no config" >&2
+    exit 1
+  }
+  conflict_case() {
+    local fragment="$1" key="$2" err
+    shift 2
+    if err="$(bs apply "$@" 2>&1 >"$out.stdout")"; then
+      echo "conflicting $key must fail" >&2
+      exit 1
+    fi
+    [[ "$err" == *"chezmoi.toml"* && "$err" == *"[data] $key"* ]] || {
+      printf 'conflict %s: stderr must name chezmoi.toml and [data] %s, got: %s\n' "$fragment" "$key" "$err" >&2
+      exit 1
+    }
+    ! grep -q '==> Step' "$out.stdout" || {
+      echo "conflict $key: a step ran before the refusal" >&2
+      exit 1
+    }
+  }
+  out="$(mktemp)"
+  conflict_case shell shell --shell fish
+  conflict_case profiles profiles --profiles core,dev
+  conflict_case name gitName --git-name Other --git-email rec@example.invalid
+  conflict_case email gitEmail --git-name Rec --git-email other@example.invalid
+  rm -f "$out" "$out.stdout"
+  # Standalone verify reads the same record; without a config it must fail clearly.
+  rm -rf "$HOME_T/.config"
+  err="$(env -u WSL_DISTRO_NAME -u XDG_CONFIG_HOME HOME="$HOME_T" OS_RELEASE_FILE="$FX/os-release/ubuntu-26.04" \
+    UNAME_M=x86_64 KERNEL_OSRELEASE_FILE="$FX/osrelease/plain" "$ROOT/script/verify" 2>&1 >/dev/null || true)"
+  [[ "$err" == *"not initialised"* ]] || {
+    printf 'verify without chezmoi config must say it is not initialised, got: %s\n' "$err" >&2
+    exit 1
+  }
+elif [[ "${REQUIRE_CHEZMOI:-0}" == 1 ]]; then
+  echo "chezmoi is required when REQUIRE_CHEZMOI=1." >&2
+  exit 1
+else
+  echo "SKIP: chezmoi not found; conflict handling not tested"
+fi
+
 # --- Unsupported OS fails before any step is printed, and the error names the OS.
 out="$(mktemp)"
-trap 'rm -f "$out"' EXIT
+trap 'rm -rf "$HOME_T"; rm -f "${out:-}" "${out:-}.err" "${out:-}.stdout"' EXIT
 if OS_RELEASE_FILE="$FX/os-release/debian-13" UNAME_M=x86_64 \
   "$B" plan >"$out" 2>"$out.err"; then
   echo "plan on debian 13 must fail" >&2
@@ -116,6 +183,15 @@ assert_match 'backup_file' "$B"
 refute_match 'chezmoi init[^#]*--apply' "$B"
 refute_match 'sudo' "$B"
 refute_match '\bchsh\b' "$B"
+# chezmoi status must be captured, not read through process substitution (a failure
+# there is swallowed); a foreign config is backed up before init rewrites it.
+refute_match '< <\(chezmoi status' "$B"
+assert_match 'status_out="\$\(chezmoi status' "$B"
+n_backup="$(line_of '^[[:space:]]*backup_foreign_config$')"
+((n_backup < $(line_of 'chezmoi init --source'))) || {
+  echo "backup_foreign_config must run before chezmoi init" >&2
+  exit 1
+}
 # The prompt texts bootstrap passes must still be the template's prompt texts.
 for key in PROMPT_GIT_NAME PROMPT_GIT_EMAIL PROMPT_PROFILES PROMPT_SHELL; do
   text="$(sed -n "s/^$key=\"\(.*\)\"\$/\1/p" "$B")"
