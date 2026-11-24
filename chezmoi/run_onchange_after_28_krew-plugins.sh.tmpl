@@ -42,7 +42,7 @@ done
 mkdir -p "$HOME/.krew/bin"
 
 # The index has to exist before anything can be installed from it.
-if ! kubectl krew update >/dev/null 2>&1; then
+if ! kubectl krew update >/dev/null; then
   echo "[ERROR] Could not update the krew index. chezmoi retries this on the next apply." >&2
   exit 1
 fi
