@@ -14,6 +14,16 @@ machine or VM (`--target linux`). Nothing else is supported.
 3. mise: language runtimes; uv for Python.
 4. chezmoi: dotfiles, rooted at `chezmoi/` through `.chezmoiroot`.
 
+## Flow
+
+`./bootstrap plan|apply` runs the guards (bash 5, not root, x86_64, Ubuntu 26.04,
+target, profiles) before any step, then `script/apt-base`, `script/install-homebrew`,
+`script/packages`, chezmoi and `script/verify`. chezmoi is run as
+`chezmoi init --source <repo>/chezmoi` with `--promptMultichoice`, `--promptChoice`
+and `--promptString` (keyed by prompt text) so its data matches what packages
+installed, then the changing targets are backed up, then `chezmoi apply`. `plan`
+uses only the `--check` forms and never runs `chezmoi init`.
+
 ## Execution boundaries
 
 Linux host for CLI tools, project-local uv environments for Python and AI work,

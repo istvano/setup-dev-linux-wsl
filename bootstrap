@@ -1,0 +1,218 @@
+#!/usr/bin/env bash
+# Provision this Ubuntu 26.04 x86_64 machine (WSL2 or plain Linux).
+#
+#   ./bootstrap plan  [options]   show every step and what it would change; changes nothing
+#   ./bootstrap apply [options]   do it
+#
+# Options:
+#   --target wsl|linux      must match the detected machine (default: detected)
+#   --profiles CSV          profile list (default: core,dev,security,kubernetes,backup)
+#   --shell zsh|fish        interactive shell (default: zsh)
+#   --non-interactive       never prompt; requires --git-name and --git-email
+#   --git-name NAME         git user.name (chezmoi prompt "Git user.name")
+#   --git-email EMAIL       git user.email (chezmoi prompt "Git user.email")
+#
+# Order: guards, apt-base, install-homebrew, packages, chezmoi, verify. Exit 0 on
+# success, 1 on failure. Never run as root; the individual steps elevate themselves.
+set -Eeuo pipefail
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=script/lib/common.sh
+source "$ROOT/script/lib/common.sh"
+# shellcheck source=script/lib/profiles.sh
+source "$ROOT/script/lib/profiles.sh"
+
+# chezmoi prompt texts. --promptString/--promptChoice/--promptMultichoice are keyed by
+# the PROMPT TEXT in chezmoi/.chezmoi.toml.tmpl, not by the data key. tests/bootstrap.sh
+# checks these still appear in the template.
+PROMPT_GIT_NAME="Git user.name"
+PROMPT_GIT_EMAIL="Git user.email"
+PROMPT_PROFILES="Workstation profiles"
+PROMPT_SHELL="Interactive shell (never changes the account login shell)"
+
+usage() {
+  cat >&2 <<'USAGE'
+Usage: ./bootstrap plan|apply [--target wsl|linux] [--profiles CSV] [--shell zsh|fish]
+                              [--non-interactive] [--git-name NAME --git-email EMAIL]
+USAGE
+  exit 2
+}
+
+# A comma or '=' would be split by chezmoi's key=value,key=value flag syntax.
+require_promptable() {
+  local flag="$1" value="$2"
+  require_value "$flag" "$value"
+  [[ "$value" != *,* && "$value" != *=* ]] ||
+    die "$flag must not contain ',' or '=' (chezmoi's --promptString cannot carry them): $value"
+}
+
+command_name="${1:-}"
+[[ "$command_name" == plan || "$command_name" == apply ]] || usage
+shift
+
+target=""
+profiles="$DEFAULT_PROFILES"
+shell_choice="zsh"
+non_interactive=0
+git_name=""
+git_email=""
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --target)
+      require_value "$1" "${2:-}"
+      target="$2"
+      shift 2
+      ;;
+    --profiles)
+      require_value "$1" "${2:-}"
+      profiles="$2"
+      shift 2
+      ;;
+    --shell)
+      require_value "$1" "${2:-}"
+      shell_choice="$2"
+      shift 2
+      ;;
+    --git-name)
+      require_promptable "$1" "${2:-}"
+      git_name="$2"
+      shift 2
+      ;;
+    --git-email)
+      require_promptable "$1" "${2:-}"
+      git_email="$2"
+      shift 2
+      ;;
+    --non-interactive)
+      non_interactive=1
+      shift
+      ;;
+    --help | -h) usage ;;
+    *) die "Unknown option: $1" ;;
+  esac
+done
+
+# --- Guards: everything is refused here, before any step is printed or run.
+require_bash5
+require_not_root
+require_x86_64
+require_supported_ubuntu
+if [[ -z "$target" ]]; then
+  target="$(detect_target)"
+fi
+[[ "$target" == wsl || "$target" == linux ]] || die "Unknown --target: $target (use wsl or linux)."
+require_target "$target"
+validate_profiles "$profiles"
+[[ "$shell_choice" == zsh || "$shell_choice" == fish ]] || die "Unknown --shell: $shell_choice (use zsh or fish)."
+if ((non_interactive)); then
+  [[ -n "$git_name" && -n "$git_email" ]] ||
+    die "--non-interactive requires --git-name and --git-email."
+fi
+
+CHEZMOI_CONFIG="${XDG_CONFIG_HOME:-$HOME/.config}/chezmoi/chezmoi.toml"
+
+STEP=0
+step() {
+  STEP=$((STEP + 1))
+  printf '\n==> Step %d: %s\n' "$STEP" "$*"
+}
+
+# run_step TITLE SCRIPT [ARGS...]: apply runs the script; plan runs its --check form,
+# which reports and changes nothing. A failing check in plan is information, not an error.
+run_step() {
+  local title="$1"
+  shift
+  step "$title"
+  if [[ "$command_name" == plan ]]; then
+    "$@" --check || warn "$title: would change something (see above)."
+  else
+    "$@"
+  fi
+}
+
+# Activate Homebrew when present so later steps find brew and chezmoi. Not an error
+# when absent: plan runs before anything is installed.
+activate_homebrew || true
+
+# Flags that make chezmoi's data match what script/packages installed. Profiles and
+# shell are always passed (the defaults when not chosen); git identity is passed when
+# given, otherwise chezmoi prompts for it (interactive only; guarded above).
+chezmoi_prompt_flags() {
+  local joined="${profiles//,//}"
+  CHEZMOI_PROMPTS=(
+    --promptMultichoice "$PROMPT_PROFILES=$joined"
+    --promptChoice "$PROMPT_SHELL=$shell_choice"
+  )
+  local strings=()
+  [[ -n "$git_name" ]] && strings+=("$PROMPT_GIT_NAME=$git_name")
+  [[ -n "$git_email" ]] && strings+=("$PROMPT_GIT_EMAIL=$git_email")
+  if ((${#strings[@]} > 0)); then
+    CHEZMOI_PROMPTS+=(--promptString "$(
+      IFS=,
+      printf '%s' "${strings[*]}"
+    )")
+  fi
+  if ((non_interactive)); then
+    CHEZMOI_PROMPTS+=(--promptDefaults)
+  fi
+}
+
+# Back up every existing file chezmoi apply would change. A brand-new target needs none.
+# chezmoi status prints "XY path": Y is the effect of apply (A add, M modify, R run).
+backup_changing_targets() {
+  local line effect path backup count=0
+  while IFS= read -r line; do
+    effect="${line:1:1}"
+    path="${line:3}"
+    [[ "$effect" == M ]] || continue
+    [[ -f "$path" || -L "$path" ]] || continue
+    backup="$(backup_file "$path")"
+    log "Backed up $path to $backup"
+    count=$((count + 1))
+  done < <(chezmoi status --path-style absolute --include files,symlinks)
+  log "$count existing file(s) backed up before apply."
+}
+
+plan_chezmoi() {
+  local n
+  if [[ -f "$CHEZMOI_CONFIG" ]]; then
+    # Initialised already: show exactly what apply would change.
+    chezmoi diff --no-pager --source "$ROOT/chezmoi" || true
+  else
+    n="$(find "$ROOT/chezmoi" -type f | wc -l | tr -d ' ')"
+    log "chezmoi: not initialised; apply would run 'chezmoi init' and manage $n source files."
+  fi
+}
+
+apply_chezmoi() {
+  if [[ "$command_name" == plan ]]; then
+    step "chezmoi (plan)"
+    if command_exists chezmoi; then
+      plan_chezmoi
+    else
+      log "chezmoi: not installed yet; the Homebrew packages step installs it."
+    fi
+    return 0
+  fi
+  command_exists chezmoi || die "chezmoi is not installed; the core profile should have provided it."
+  step "chezmoi init"
+  chezmoi_prompt_flags
+  chezmoi init --source "$ROOT/chezmoi" "${CHEZMOI_PROMPTS[@]}"
+  step "chezmoi backup of changing targets"
+  backup_changing_targets
+  step "chezmoi apply"
+  chezmoi apply --source "$ROOT/chezmoi"
+}
+
+log "Target: $target; profiles: $profiles; shell: $shell_choice; mode: $command_name"
+
+run_step "apt base packages" "$ROOT/script/apt-base"
+run_step "Homebrew" "$ROOT/script/install-homebrew"
+activate_homebrew || [[ "$command_name" == plan ]] || die "Homebrew did not activate after install."
+run_step "Homebrew packages" "$ROOT/script/packages" --profiles "$profiles" --shell "$shell_choice"
+apply_chezmoi
+if [[ "$command_name" == plan ]]; then
+  log "Plan only: nothing was changed. verify runs at the end of apply."
+  exit 0
+fi
+run_step "verify" "$ROOT/script/verify" --target "$target" --profiles "$profiles" --shell "$shell_choice"
+success "bootstrap complete."

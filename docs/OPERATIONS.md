@@ -12,7 +12,47 @@ REQUIRE_LINTERS=1 ./script/test     # fails instead of skipping; what CI runs
 Bash 5 or newer is required. Under an older bash the command stops with
 `bash 5 or newer is required`.
 
-Install, update and recovery procedures are added as `bootstrap` is built.
+## New machine (Linux)
+
+On Ubuntu 26.04 x86_64, as a normal user with sudo:
+
+```bash
+git clone <this repository> ~/setup-dev-linux-wsl && cd ~/setup-dev-linux-wsl
+./bootstrap plan --target linux      # read it; nothing is changed
+./bootstrap apply --target linux     # chezmoi asks for your git name and email
+```
+
+`apply` runs, in order: apt base packages, Homebrew (a pinned clone, never a
+downloaded script), the profile packages, chezmoi, then `script/verify`. Enrol the
+SSH key it prints (see the section below) and, if you want the new shell as your
+login shell, run the `chsh` line it reports; the repository never does either.
+
+## New machine (WSL, run by setup-dev-win)
+
+The Windows repository runs this one inside the distro, so there is no terminal to
+answer chezmoi's prompts:
+
+```bash
+./bootstrap apply --target wsl --non-interactive \
+  --git-name "Your Name" --git-email you@example.com
+```
+
+`--non-interactive` requires both identity flags and uses chezmoi's defaults for the
+rest. Values must not contain `,` or `=` (chezmoi's prompt flags cannot carry them);
+bootstrap refuses them. Keep checkouts in the Linux filesystem: `script/verify`
+fails if it finds git repositories under `/mnt`.
+
+## Re-running safely
+
+`./bootstrap apply` is idempotent: apt and Homebrew skip what is installed, and
+nothing is ever uninstalled. Before chezmoi writes, every existing file it would
+change is copied to `<file>.backup.<UTC timestamp>`; brand-new files need no backup.
+`./bootstrap plan` changes nothing: it runs only the `--check` forms and, once
+chezmoi is initialised, `chezmoi diff`. `./script/verify` reports each check and
+exits 1 if any failed. Its chezmoi check ignores scripts, because the SSH hooks run
+on every apply by design. The login-shell line is informational.
+
+Install, update and recovery procedures beyond this are added as they are built.
 
 ## Enrol this machine's SSH key
 

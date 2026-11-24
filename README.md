@@ -18,10 +18,14 @@ Any other distro, release or architecture is refused before anything changes.
 ```bash
 ./bootstrap plan --target wsl    # show what would happen; changes nothing
 ./bootstrap apply --target wsl   # do it
+./script/verify                  # is the machine in the state the repository describes?
 ./script/test                    # repository tests (bash 5 required)
 ```
 
-`bootstrap` arrives in a later task of the first milestone.
+Options: `--target wsl|linux`, `--profiles CSV`, `--shell zsh|fish`,
+`--non-interactive` (needs `--git-name NAME --git-email EMAIL`). Run it as your
+normal user, never as root. Existing files that chezmoi would change are copied to
+`<file>.backup.<UTC timestamp>` first.
 
 ## Profiles
 
