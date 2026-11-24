@@ -61,16 +61,20 @@ if [[ -d "$repo/.git" ]]; then
   fi
   log "Homebrew already present at $BREW_PREFIX."
 else
-  sudo install -d -o "$USER" -g "$(id -gn)" "$BREW_PREFIX"
+  sudo install -d -o "$(id -un)" -g "$(id -gn)" "$BREW_PREFIX"
   git clone --branch "$tag" "$REPO_URL" "$repo"
   actual="$(git -C "$repo" rev-parse HEAD)"
   if [[ "$actual" != "$commit" ]]; then
     rm -rf "$repo"
     die "Homebrew tag $tag resolved to $actual, expected $commit; clone removed."
   fi
-  mkdir -p "$BREW_PREFIX/bin"
-  ln -sf ../Homebrew/bin/brew "$BREW_PREFIX/bin/brew"
 fi
+
+# Outside the if/else so it runs on both paths: an install interrupted between the
+# clone and this line has a verified repository but no bin/brew, and the next run
+# heals it here instead of failing at activate_homebrew. ln -sf is idempotent.
+mkdir -p "$BREW_PREFIX/bin"
+ln -sf ../Homebrew/bin/brew "$BREW_PREFIX/bin/brew"
 
 activate_homebrew || die "Homebrew is not executable at $BREW_PREFIX/bin/brew."
 brew analytics off
