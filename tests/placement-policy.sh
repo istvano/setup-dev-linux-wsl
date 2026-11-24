@@ -153,18 +153,48 @@ refute_match 'lmstudio|\.rd/bin|colima|rancher' "$ZSHRC" "$FISHRC"
 assert_match 'template "brew-shellenv"' "$ZSHRC"
 assert_match 'test -x /home/linuxbrew/.linuxbrew/bin/brew' "$FISHRC"
 
-# The hook's one instruction, and its silence when already on the selected shell.
-# Run it for real: it only prints, so this is safe.
-hook_out="$(printf '%s\n' "$(render linux.toml "$LOGIN_HOOK")" | SHELL=/bin/bash bash 2>&1)"
+# The login-shell hook, run for real (it only prints). Login shell is stubbed through
+# LOGIN_SHELL_OVERRIDE. zsh: one chsh line when on bash, silent when already on zsh.
+run_hook() { # run_hook FIXTURE LOGIN_SHELL
+  printf '%s\n' "$(render "$1" "$LOGIN_HOOK")" | LOGIN_SHELL_OVERRIDE="$2" bash 2>&1
+}
+hook_out="$(run_hook linux.toml /bin/bash)"
 if [[ "$(wc -l <<<"$hook_out" | tr -d ' ')" != 1 ]] || ! grep -q 'chsh -s /usr/bin/zsh' <<<"$hook_out"; then
-  printf 'login-shell hook must print exactly one chsh instruction, got:\n%s\n' "$hook_out" >&2
+  printf 'login-shell hook must print exactly one chsh instruction for zsh, got:\n%s\n' "$hook_out" >&2
   exit 1
 fi
-hook_quiet="$(printf '%s\n' "$(render linux.toml "$LOGIN_HOOK")" | SHELL=/usr/bin/zsh bash 2>&1)"
+hook_quiet="$(run_hook linux.toml /usr/bin/zsh)"
 [[ -z "$hook_quiet" ]] || {
   printf 'login-shell hook must be silent when already on zsh, got:\n%s\n' "$hook_quiet" >&2
   exit 1
 }
+# fish (Homebrew path, not in /etc/shells): the /etc/shells line then chsh, both printed.
+# A stub fish on PATH stands in for the Homebrew binary.
+FAKEBIN="$(mktemp -d)"
+printf '#!/bin/sh\n' >"$FAKEBIN/fish"
+chmod +x "$FAKEBIN/fish"
+fish_fixture="$FAKEBIN/fish.toml"
+sed 's/^shell = .*/shell = "fish"/' "$ROOT/tests/fixtures/chezmoi/linux.toml" >"$fish_fixture"
+fish_hook_out="$(printf '%s\n' "$(render "$fish_fixture" "$LOGIN_HOOK")" |
+  PATH="$FAKEBIN:$PATH" LOGIN_SHELL_OVERRIDE=/bin/bash bash 2>&1)"
+if ! grep -qF "echo $FAKEBIN/fish | sudo tee -a /etc/shells" <<<"$fish_hook_out" ||
+  ! grep -qF "chsh -s $FAKEBIN/fish" <<<"$fish_hook_out"; then
+  printf 'fish hook output lacks the /etc/shells and chsh instructions:\n%s\n' "$fish_hook_out" >&2
+  exit 1
+fi
+rm -rf "$FAKEBIN"
+
+# conn --help is extracted by fixed line numbers (sed -n '2,8p'), so the provenance
+# header must not shift it: the help must equal the Mac's.
+conn_help="$(zsh "$ROOT/chezmoi/dot_local/bin/executable_conn" --help 2>&1 || true)"
+if command -v zsh >/dev/null 2>&1; then
+  if ! grep -q '^conn — fzf picker' <<<"$conn_help" ||
+    ! grep -q '^-n prints the command instead of running it\.' <<<"$conn_help" ||
+    grep -q 'Provenance' <<<"$conn_help"; then
+    printf 'conn --help output is wrong:\n%s\n' "$conn_help" >&2
+    exit 1
+  fi
+fi
 
 # Syntax: zsh -n on the rendered .zshrc (conn is covered by shell-syntax.sh), and
 # fish --no-execute on the rendered fish config. Neither interpreter is installed by

@@ -13,9 +13,19 @@ SELECTED={{ .shell | quote }}
 
 {{ template "brew-shellenv" . }}
 
-# $SHELL is the login shell of the account running this script; a chezmoi run script
-# inherits the environment of the apply, which carries it.
-if [[ "$(basename "${SHELL:-}")" == "$SELECTED" ]]; then
+# The account's login shell comes from the account database, not $SHELL, which only
+# names whichever shell launched this apply. LOGIN_SHELL_OVERRIDE exists so the test can
+# stub the answer; it is unset in real use.
+current="${LOGIN_SHELL_OVERRIDE:-}"
+if [[ -z "$current" ]]; then
+  current="$(getent passwd "$(id -un)" | cut -d: -f7)" || true
+fi
+if [[ -z "$current" ]]; then
+  echo "[WARN] Could not read the login shell; skipping the check." >&2
+  exit 0
+fi
+
+if [[ "$(basename "$current")" == "$SELECTED" ]]; then
   exit 0
 fi
 
@@ -29,4 +39,12 @@ if [[ -z "$selected_path" ]]; then
   exit 0
 fi
 
-echo "[INFO] Login shell is ${SHELL:-unknown}; to make $SELECTED the login shell, run: chsh -s $selected_path" >&2
+# Printed, never run. zsh is a distro package and already listed in /etc/shells. A
+# Homebrew shell is not, and chsh refuses an unlisted shell, so it needs the first line.
+if [[ "$selected_path" == /usr/bin/* ]]; then
+  echo "[INFO] Login shell is $current; to make $SELECTED the login shell, run: chsh -s $selected_path" >&2
+else
+  echo "[INFO] Login shell is $current; to make $SELECTED the login shell, run:" >&2
+  echo "  echo $selected_path | sudo tee -a /etc/shells" >&2
+  echo "  chsh -s $selected_path" >&2
+fi

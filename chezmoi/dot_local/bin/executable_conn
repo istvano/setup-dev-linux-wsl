@@ -1,5 +1,4 @@
 #!/bin/zsh
-# Provenance: copied verbatim from setup-dev-mac/chezmoi/dot_local/bin/executable_conn.
 # conn — fzf picker over the Host aliases in ~/.ssh/config.d.
 #
 #   conn [-n] [ssh|sftp|scp] [query]
@@ -7,6 +6,8 @@
 # Enter runs the chosen mode (ssh by default); Ctrl-F forces sftp, Ctrl-S scp.
 # A query that matches exactly one host connects without showing the list.
 # -n prints the command instead of running it.
+#
+# Provenance: copied verbatim from setup-dev-mac/chezmoi/dot_local/bin/executable_conn.
 #
 # Managed by chezmoi from chezmoi/dot_local/bin/executable_conn; edit it there.
 # zsh rather than the repository's bash 3.2 on purpose: the scp prompts prefill the
