@@ -334,4 +334,88 @@ ssh_cfg="$ROOT/chezmoi/private_dot_ssh/config.tmpl"
 refute_match '^[[:space:]]*(IdentityAgent|UseKeychain)' "$ssh_cfg"
 refute_match '^[[:space:]]*ForwardAgent[[:space:]]+yes' "$ssh_cfg"
 
+## krew plugins, opt-in profiles, DROPPED.md, apt base additions (ADR-010)
+
+KREW_HOOK="$ROOT/chezmoi/run_onchange_after_28_krew-plugins.sh.tmpl"
+[[ -f "$KREW_HOOK" ]] || {
+  echo 'Missing chezmoi/run_onchange_after_28_krew-plugins.sh.tmpl.' >&2
+  exit 1
+}
+# Gated on the kubernetes profile, the plugin list declared once and exactly these five,
+# the Homebrew environment from the single template, and ~/.krew/bin created first.
+assert_match '^\{\{-? if has "kubernetes" \.profiles -?\}\}' "$KREW_HOOK"
+assert_match '\{\{ template "brew-shellenv" \. \}\}' "$KREW_HOOK"
+# shellcheck disable=SC2016  # a Go-template variable, matched literally
+krew_list="$(grep -E '^\{\{-?[[:space:]]*\$plugins := list ' "$KREW_HOOK" | head -n 1 || true)"
+[[ "$(grep -oE '"[^"]+"' <<<"$krew_list" | tr -d '"' | sort | paste -sd, -)" == 'images,neat,tree,view-secret,whoami' ]] || {
+  printf 'krew hook must declare exactly neat view-secret tree whoami images; got: %s\n' "$krew_list" >&2
+  exit 1
+}
+# shellcheck disable=SC2016  # the hook's own $HOME, matched literally
+mkdir_line="$(grep -n 'mkdir -p "\$HOME/.krew/bin"' "$KREW_HOOK" | head -n 1 | cut -d: -f1 || true)"
+install_line="$(grep -n 'krew install' "$KREW_HOOK" | grep -v '^[0-9]*:[[:space:]]*#' | head -n 1 | cut -d: -f1 || true)"
+if [[ -z "$mkdir_line" || -z "$install_line" ]] || ((mkdir_line >= install_line)); then
+  echo 'krew hook must mkdir -p ~/.krew/bin before the first install.' >&2
+  exit 1
+fi
+# The shells' comments must be true: the hook they name exists (fish used to claim
+# nothing creates the directory).
+assert_match 'run_onchange_after_28_krew-plugins' "$ROOT/chezmoi/dot_config/fish/config.fish.tmpl"
+refute_match 'nothing creates ~/.krew/bin' "$ROOT/chezmoi/dot_config/fish/config.fish.tmpl"
+
+# The new profiles are opt-in: valid, with a fragment, and not in the default.
+# shellcheck source=script/lib/profiles.sh
+source "$ROOT/script/lib/profiles.sh"
+for optin in security-scan cloud cloud-aws cloud-azure docs; do
+  [[ ",$DEFAULT_PROFILES," != *",$optin,"* ]] || {
+    printf 'profile %s must be opt-in but is in DEFAULT_PROFILES.\n' "$optin" >&2
+    exit 1
+  }
+  [[ -s "$ROOT/profiles/$optin.Brewfile" ]] || {
+    printf 'missing profile fragment: %s\n' "$optin" >&2
+    exit 1
+  }
+  assert_match "^\\| $optin \\| no \\|" "$ROOT/README.md"
+done
+for must in syft grype osv-scanner trufflehog cosign nmap; do
+  assert_match "^brew \"$must\"" "$ROOT/profiles/security-scan.Brewfile"
+done
+for must in opentofu terraform-docs terragrunt; do
+  assert_match "^brew \"$must\"" "$ROOT/profiles/cloud.Brewfile"
+done
+assert_match '^brew "awscli"' "$ROOT/profiles/cloud-aws.Brewfile"
+assert_match '^brew "kubelogin"' "$ROOT/profiles/cloud-azure.Brewfile"
+assert_match '^brew "d2"' "$ROOT/profiles/docs.Brewfile"
+assert_match '^brew "pandoc"' "$ROOT/profiles/docs.Brewfile"
+# gcloud and azure-cli are macOS-only casks in homebrew-core: they must not appear as
+# formulae, and cloud-gcp must not exist until the vendor apt machinery does.
+refute_match '^brew "(azure-cli|gcloud-cli|google-cloud-sdk)"' "$ROOT/profiles"
+[[ ! -e "$ROOT/profiles/cloud-gcp.Brewfile" ]] || {
+  echo 'cloud-gcp.Brewfile exists but is deferred to the vendor-apt milestone.' >&2
+  exit 1
+}
+assert_match 'cloud-gcp' "$ROOT/TASKS.md"
+assert_match 'azure-cli' "$ROOT/TASKS.md"
+
+# docs/DROPPED.md: one row per dropped tool, linked from the README and ARCHITECTURE.
+DROPPED="$ROOT/docs/DROPPED.md"
+[[ -s "$DROPPED" ]] || {
+  echo 'Missing docs/DROPPED.md.' >&2
+  exit 1
+}
+for name in sdkman nvm oh-my-zsh snap GNOME ufw apport httpie firejail Ansible Mandrel BetterDisplay iTerm2 'Docker Desktop' cloud-gcp; do
+  assert_match "^\\|[^|]*$name" "$DROPPED"
+done
+assert_match 'docs/DROPPED\.md' "$ROOT/README.md"
+assert_match 'DROPPED\.md' "$ROOT/docs/ARCHITECTURE.md"
+
+# apt base: wget and libxml2-utils, each with a purpose comment (ADR-010).
+assert_match '^wget[[:space:]]+# .+' "$ROOT/apt/base.list"
+assert_match '^libxml2-utils[[:space:]]+# .+' "$ROOT/apt/base.list"
+
+# CI's formula-availability step covers every opt-in profile.
+for optin in security-scan cloud cloud-aws cloud-azure docs; do
+  assert_match "--profiles core,dev,security,kubernetes,backup,productivity-extra,.*$optin" "$ROOT/.github/workflows/validate.yml"
+done
+
 echo 'placement-policy: OK'

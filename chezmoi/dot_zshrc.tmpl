@@ -23,9 +23,9 @@
 #
 # APPENDED: a plugin must never shadow a declared Homebrew binary of the same name.
 #
-# Not guarded on the directory existing. krew creates ~/.krew/bin the first
-# time it installs a plugin, which is often AFTER this shell started, so an existence check
-# would leave the current session unable to run the plugin it just installed.
+# Not guarded on the directory existing. run_onchange_after_28_krew-plugins creates
+# ~/.krew/bin on apply, which can happen AFTER this shell started, so an existence check
+# would leave the current session unable to run a plugin installed since.
 [[ ":$PATH:" == *":$HOME/.krew/bin:"* ]] || export PATH="$PATH:$HOME/.krew/bin"
 {{- end }}
 

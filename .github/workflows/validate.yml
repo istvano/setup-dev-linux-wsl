@@ -98,7 +98,7 @@ jobs:
           '
       - name: Verify
         run: sudo -u dev -H bash -lc 'cd ~/setup-dev-linux-wsl && ./script/verify'
-      # Every formula the default profiles, productivity-extra and the fish shell would
+      # Every formula the default profiles, every opt-in profile and the fish shell would
       # install must exist in Homebrew and be usable on Linux. A failure here means the
       # formula moves to chezmoi/dot_config/mise/config.toml.tmpl and gets an ADR.
       # It runs even when an earlier step failed, because an unknown formula is the
@@ -118,7 +118,7 @@ jobs:
             out="$(mktemp)"
             trap "rm -f \"$out\"" EXIT
             ./script/render-brewfile \
-              --profiles core,dev,security,kubernetes,backup,productivity-extra \
+              --profiles core,dev,security,kubernetes,backup,productivity-extra,security-scan,cloud,cloud-aws,cloud-azure,docs \
               --shell fish --output "$out"
             mapfile -t formulae < <(sed -nE "s/^brew \"([^\"]+)\".*/\1/p" "$out")
             echo "${#formulae[@]} formulae to check"

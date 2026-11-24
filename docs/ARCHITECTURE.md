@@ -35,6 +35,14 @@ follows `gitSigningMethod`: `ssh` signs and verifies a commit, `gpg` asserts
 The runtimes hook (`run_onchange_after_20`) fails when `mise install` fails, so
 chezmoi retries it on the next apply.
 
+## Profiles
+
+Default: core, dev, security, kubernetes, backup. Opt-in: productivity-extra,
+security-scan, cloud, cloud-aws, cloud-azure, docs (ADR-010). Each is a
+`profiles/<name>.Brewfile` fragment of formulae only. `gcloud` and `azure-cli` are
+macOS-only casks in homebrew-core, so they wait for the vendor-apt milestone. Tools and
+approaches that were considered and refused are recorded in [DROPPED.md](DROPPED.md).
+
 ## Execution boundaries
 
 Linux host for CLI tools, project-local uv environments for Python and AI work,
