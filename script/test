@@ -12,6 +12,8 @@ TESTS=(
   format
   placement-policy
   platform
+  profiles
+  render-brewfile
 )
 
 for test in "${TESTS[@]}"; do

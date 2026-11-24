@@ -1,0 +1,60 @@
+#!/usr/bin/env bash
+# Render the selected profile fragments into one Brewfile. Pure text: it needs
+# no Homebrew, so tests and CI can run it anywhere.
+set -Eeuo pipefail
+IFS=$'\n\t'
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+# shellcheck source=script/lib/common.sh
+source "$ROOT/script/lib/common.sh"
+# shellcheck source=script/lib/profiles.sh
+source "$ROOT/script/lib/profiles.sh"
+
+PROFILES="$DEFAULT_PROFILES"
+# SHELL names the running shell, so the selection needs its own name.
+SHELL_CHOICE="zsh"
+OUTPUT="${XDG_CONFIG_HOME:-$HOME/.config}/setup-dev-linux-wsl/Brewfile"
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --profiles)
+      require_value "$1" "${2:-}"
+      PROFILES="$2"
+      shift 2
+      ;;
+    --shell)
+      require_value "$1" "${2:-}"
+      SHELL_CHOICE="$2"
+      shift 2
+      ;;
+    # --output most of all: unguarded, `--output --profiles core` would write the
+    # rendered Brewfile to a file literally named "--profiles".
+    --output)
+      require_value "$1" "${2:-}"
+      OUTPUT="$2"
+      shift 2
+      ;;
+    *) die "Unknown option: $1" ;;
+  esac
+done
+[[ "$SHELL_CHOICE" =~ ^(zsh|fish)$ ]] || die "Invalid shell"
+validate_profiles "$PROFILES"
+
+fragments=()
+IFS=',' read -r -a requested_profiles <<<"$PROFILES"
+for profile in "${requested_profiles[@]}"; do
+  fragments+=("$ROOT/profiles/$profile.Brewfile")
+done
+# The shell fragment has no `none`: a workstation always has an interactive shell.
+fragments+=("$ROOT/profiles/shell-$SHELL_CHOICE.Brewfile")
+for fragment in "${fragments[@]}"; do [[ -f "$fragment" ]] || die "Missing fragment: $fragment"; done
+
+{
+  printf '# Generated from reviewed profile fragments. Do not edit directly.\n'
+  printf '# Profiles: %s\n' "$PROFILES"
+  printf '# Shell: %s\n\n' "$SHELL_CHOICE"
+  for fragment in "${fragments[@]}"; do
+    printf '# ---- %s ----\n' "$(basename "$fragment")"
+    cat "$fragment"
+    printf '\n'
+  done
+} | atomic_write "$OUTPUT"
+success "Rendered $OUTPUT"

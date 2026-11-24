@@ -1,0 +1,37 @@
+#!/usr/bin/env bash
+
+# Shared shell-side profile catalogue. Chezmoi's Go template keeps a matching
+# list because it cannot source shell data; tests/profiles.sh compares them.
+# Consumed by sourcing scripts (bootstrap, script/render-brewfile, tests).
+# shellcheck disable=SC2034
+DEFAULT_PROFILES="core,dev,security,kubernetes,backup"
+VALID_PROFILES=(
+  core
+  dev
+  security
+  kubernetes
+  backup
+  productivity-extra
+)
+
+validate_profiles() {
+  local requested="$1" profile valid match seen=","
+  local requested_profiles=()
+
+  [[ -n "$requested" && "$requested" != ,* && "$requested" != *, && "$requested" != *,,* ]] ||
+    die "Profiles must be a non-empty comma-separated list."
+
+  IFS=',' read -r -a requested_profiles <<<"$requested"
+  for profile in "${requested_profiles[@]}"; do
+    match=false
+    for valid in "${VALID_PROFILES[@]}"; do
+      if [[ "$profile" == "$valid" ]]; then
+        match=true
+        break
+      fi
+    done
+    [[ "$match" == true ]] || die "Unknown profile: $profile"
+    [[ "$seen" != *",$profile,"* ]] || die "Duplicate profile: $profile"
+    seen+="$profile,"
+  done
+}
