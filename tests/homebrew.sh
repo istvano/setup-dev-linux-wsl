@@ -69,11 +69,16 @@ refute_match '[$][{]?USER([^A-Za-z0-9_]|$)' "$INSTALL" "$ROOT/script/lib" "$ROOT
 # on the next run. A copy of the script runs against a local repository whose HEAD is
 # the "locked" commit of a copied brew.lock, so the existing-clone path is taken with
 # no network and no sudo. Its bin/brew stub answers shellenv, analytics and update.
+# PATH is reduced to the system directories so no real brew can be reached.
 heal="$tmp/heal"
 mkdir -p "$heal/tree/script" "$heal/tree/homebrew" "$heal/prefix/Homebrew/bin"
 cp "$INSTALL" "$heal/tree/script/install-homebrew"
 cp -R "$ROOT/script/lib" "$heal/tree/script/lib"
-printf '#!/bin/sh\nexit 0\n' >"$heal/prefix/Homebrew/bin/brew"
+# shellenv puts the stub's own bin first, so the script's later bare `brew` calls
+# reach the stub and never a real Homebrew on the machine running the tests.
+# shellcheck disable=SC2016  # $1 and $PATH belong to the generated stub
+printf '#!/bin/sh\n[ "$1" = shellenv ] && echo "export PATH=\\"%s/bin:\\$PATH\\""\nexit 0\n' \
+  "$heal/prefix" >"$heal/prefix/Homebrew/bin/brew"
 chmod +x "$heal/prefix/Homebrew/bin/brew"
 git -C "$heal/prefix/Homebrew" init -q
 git -C "$heal/prefix/Homebrew" add bin/brew
@@ -81,7 +86,8 @@ git -C "$heal/prefix/Homebrew" -c user.name=t -c user.email=t@example.invalid \
   -c commit.gpgsign=false commit -q -m 'fake brew'
 printf 'tag=0.0.0\ncommit=%s\n' "$(git -C "$heal/prefix/Homebrew" rev-parse HEAD)" >"$heal/tree/homebrew/brew.lock"
 [[ ! -e "$heal/prefix/bin/brew" ]]
-heal_out="$(BREW_PREFIX="$heal/prefix" "$heal/tree/script/install-homebrew" 2>&1)" || {
+heal_out="$(PATH="/usr/bin:/bin" BREW_PREFIX="$heal/prefix" "$(command -v bash)" \
+  "$heal/tree/script/install-homebrew" 2>&1)" || {
   printf 'install-homebrew did not heal a missing bin/brew symlink:\n%s\n' "$heal_out" >&2
   exit 1
 }

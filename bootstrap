@@ -218,7 +218,7 @@ run_step() {
 # a '"', would make every later `chezmoi init` fail.
 chezmoi_prompt_flags() {
   CHEZMOI_PROMPTS=()
-  if ((! recorded)); then
+  if [[ "$recorded" == 0 ]]; then
     CHEZMOI_PROMPTS+=(
       --promptMultichoice "$PROMPT_PROFILES=${profiles//,//}"
       --promptChoice "$PROMPT_SHELL=$shell_choice"
