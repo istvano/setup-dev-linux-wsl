@@ -80,6 +80,11 @@ RUNTIMES_HOOK="$ROOT/chezmoi/run_onchange_after_20_configure-runtimes.sh.tmpl"
 refute_match '"latest"' "$MISE_CONFIG"
 refute_match '= *"lts"' "$MISE_CONFIG"
 
+# codex has no Linux Homebrew formula (ADR-009): it is pinned through mise's aqua
+# backend at an exact version, and must not return to the Brewfile.
+assert_match '^"aqua:openai/codex" = "[0-9]+[.][0-9]+[.][0-9]+"$' "$MISE_CONFIG"
+refute_match '^brew "codex"' "$ROOT/profiles"
+
 # Homebrew lives under /home/linuxbrew; the Apple Silicon prefix must not leak in.
 refute_match '/opt/homebrew' "$ROOT/chezmoi"
 

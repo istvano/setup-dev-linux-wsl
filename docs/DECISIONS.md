@@ -88,3 +88,21 @@ Status: accepted. Carried from setup-dev-mac ADR-022.
 Before adding a tool, check whether an installed one covers the use case. The
 default profiles together may contain at most 70 entries, a cap enforced by a test
 once profiles exist.
+
+## ADR-009: codex via mise (aqua) on Linux
+
+Status: accepted.
+
+Context: `codex` was listed as a Homebrew formula in the dev profile. It is a cask
+only, and the cask has no Linux build, so `brew bundle` failed on x86_64 Ubuntu. The
+integration rehearsal on 2026-11-24 found it, which is what the formula-availability
+check is for.
+
+Decision: the dev profile no longer lists `codex` in `profiles/dev.Brewfile`. It is
+pinned in `chezmoi/dot_config/mise/config.toml.tmpl` as `"aqua:openai/codex"`, inside
+the `dev` gate, at an exact version. The aqua backend verifies the release checksum,
+and no download-and-run script is involved.
+
+Consequences: updates are pin bumps in that file, not `brew upgrade`. The upstream
+tag is `rust-v<version>`; the aqua registry strips the prefix, so the pin is the bare
+version. `tests/placement-policy.sh` asserts the pin and that it is not floating.

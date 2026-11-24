@@ -1,7 +1,6 @@
-# Terminal coding agents. Provider-agnostic and OpenAI CLIs, run on the host
+# Terminal coding agents, run on the host (OpenAI Codex comes from mise: ADR-009)
 # because they need the project checkout and the user's own credentials.
 brew "opencode"   # Provider-agnostic terminal coding agent; MIT.
-brew "codex"      # OpenAI Codex CLI for repository-aware terminal development.
 # Language runtimes come from mise, not Homebrew (see chezmoi mise config).
 brew "shellcheck" # Native static analysis for frequently edited shell scripts.
 brew "shfmt"      # Deterministic formatter for repository shell scripts.
