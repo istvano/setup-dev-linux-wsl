@@ -28,7 +28,8 @@ check() {
     return 1
   }
   local state
-  state="$(brew analytics state 2>&1 || true)"
+  # The export above would make Homebrew report "disabled" regardless; query the stored setting.
+  state="$(env -u HOMEBREW_NO_ANALYTICS brew analytics state 2>&1 || true)"
   [[ "$state" == *[Dd]isabled* ]] || {
     warn "Homebrew analytics are not disabled: $state"
     return 1

@@ -39,6 +39,10 @@ brew_line="$(grep -nE 'brew ' "$INSTALL" | grep -vE '^[0-9]+:[[:space:]]*#' | he
   exit 1
 }
 
+# --check must query the stored setting, not the exported variable (which makes
+# Homebrew report "disabled" unconditionally).
+assert_match 'env -u HOMEBREW_NO_ANALYTICS brew analytics state' "$INSTALL"
+
 # Partial-clone guard: an unrelated repository at the prefix must be refused.
 tmp="$(mktemp -d)"
 trap 'rm -rf "$tmp"' EXIT
