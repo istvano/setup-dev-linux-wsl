@@ -3,19 +3,21 @@
 # can verify commits signed with this machine's key.
 #
 # The file is generated locally from the local public key and is not tracked: it names
-# this machine's key, which exists nowhere else. It is re-generated when the emails below
-# change; after replacing the key itself, remove the file and run `chezmoi apply` again.
+# this machine's key, which exists nowhere else.
+#
+# run_after_, not run_onchange_: it runs on EVERY apply, so replacing the key, deleting
+# the file or fixing a failed key generation is repaired by the next `chezmoi apply`.
+# run_onchange_ would only re-run when the emails below change. The file is rewritten
+# only when its content differs, so a steady-state apply touches nothing.
 #
 # Format, one line per identity: <email> <public key line>
-#   gitEmail:     {{ .gitEmail }}
-#   workGitEmail: {{ .workGitEmail }}
 set -Eeuo pipefail
 
 PUB="{{ .chezmoi.homeDir }}/.ssh/id_ed25519.pub"
 OUT="{{ .chezmoi.homeDir }}/.config/git/allowed_signers"
 
 if [[ ! -f "$PUB" ]]; then
-  echo "[WARN] $PUB does not exist; not writing $OUT. Run chezmoi apply again after the key exists." >&2
+  echo "[WARN] $PUB does not exist; not writing $OUT. The ssh-key hook generates it; run chezmoi apply again." >&2
   exit 0
 fi
 
@@ -33,6 +35,11 @@ trap 'rm -f "$tmp"' EXIT
   printf '%s %s\n' {{ .workGitEmail | quote }} "$pubkey"
 {{- end }}
 } >"$tmp"
+
+# Unchanged content: leave the existing file (and its mtime and mode) alone.
+if [[ -f "$OUT" ]] && cmp -s "$tmp" "$OUT"; then
+  exit 0
+fi
 
 chmod 644 "$tmp"
 mv "$tmp" "$OUT"

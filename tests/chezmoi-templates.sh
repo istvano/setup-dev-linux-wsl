@@ -163,6 +163,9 @@ if command -v ssh >/dev/null 2>&1; then
       exit 1
     }
   done
+elif [[ "${REQUIRE_LINTERS:-0}" == "1" ]]; then
+  echo 'ssh is required when REQUIRE_LINTERS=1.' >&2
+  exit 1
 else
   echo '  ssh -G check: ssh not installed, skipped'
 fi

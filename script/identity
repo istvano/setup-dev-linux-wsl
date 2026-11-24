@@ -3,7 +3,7 @@
 # a throwaway repository.
 #
 # Packages are reproducible from this repository; identity is not. The ssh key is
-# GENERATED per machine by chezmoi (run_onchange_after_12) and never moved, so a lost
+# GENERATED per machine by chezmoi (run_after_12) and never moved, so a lost
 # machine is revoked at the forge instead of rotated. This script answers the question
 # "can this machine authenticate and sign?" that no package check can.
 #
@@ -63,7 +63,7 @@ check_ssh_key() {
   echo
   echo '== ssh key =='
   if [[ ! -f "$SSH_KEY" ]]; then
-    fail "No SSH key at $SSH_KEY. chezmoi apply generates it."
+    fail "No SSH key at $SSH_KEY. Run chezmoi apply to generate it."
     return
   fi
   if key_mode_is_600 "$SSH_KEY"; then
@@ -108,7 +108,7 @@ check_signing() {
   signers="$(git config --get gpg.ssh.allowedSignersFile 2>/dev/null || true)"
   signers="$(expand_home "${signers:-$HOME/.config/git/allowed_signers}")"
   if [[ ! -f "$signers" ]]; then
-    fail "No allowed_signers file at $signers; chezmoi apply writes it."
+    fail "No allowed_signers file at $signers; run chezmoi apply to regenerate it."
     return
   fi
   email="$(git config --get user.email 2>/dev/null || true)"

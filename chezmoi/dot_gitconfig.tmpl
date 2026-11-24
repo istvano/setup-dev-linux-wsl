@@ -126,8 +126,8 @@ credential helper, password-manager signing program and pinentry settings. */ -}
 {{- end }}
 {{- else }}
 
-# SSH commit signing with this machine's own key (run_onchange_after_12 generates
-# it, run_onchange_after_13 writes the allowed_signers file). The private key never
+# SSH commit signing with this machine's own key (run_after_12 generates
+# it, run_after_13 writes the allowed_signers file). The private key never
 # leaves the machine: revoking a lost machine is one action at the forge.
 [gpg]
   format = ssh

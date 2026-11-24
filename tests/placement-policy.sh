@@ -222,14 +222,21 @@ fi
 
 ## git, ssh and per-machine signing identity
 
-KEY_HOOK="$ROOT/chezmoi/run_onchange_after_12_ssh-key.sh.tmpl"
-SIGNERS_HOOK="$ROOT/chezmoi/run_onchange_after_13_allowed-signers.sh.tmpl"
+KEY_HOOK="$ROOT/chezmoi/run_after_12_ssh-key.sh.tmpl"
+SIGNERS_HOOK="$ROOT/chezmoi/run_after_13_allowed-signers.sh.tmpl"
 for file in "$KEY_HOOK" "$SIGNERS_HOOK" "$ROOT/script/identity"; do
   [[ -f "$file" ]] || {
     printf 'Missing identity file: %s\n' "$file" >&2
     exit 1
   }
 done
+# These hooks must be run_after_, not run_onchange_. chezmoi re-runs a run_onchange_
+# script only when its rendered text changes, so a deleted key, a replaced key or a
+# failed first generation would never be repaired by a later apply.
+[[ "$(basename "$KEY_HOOK")" == run_after_* && "$(basename "$SIGNERS_HOOK")" == run_after_* ]] || {
+  echo 'identity hooks must be run_after_, not run_onchange_.' >&2
+  exit 1
+}
 # The key hook guards generation behind an existing-key check and never removes or
 # regenerates a key in place: no rm, no -y (re-derive), no overwrite-by-force.
 assert_match '\[\[ -f ' "$KEY_HOOK"
@@ -248,6 +255,10 @@ key_code="$(code_lines "$KEY_HOOK")"
 signers_code="$(code_lines "$SIGNERS_HOOK")"
 grep -q 'mktemp' <<<"$signers_code" || {
   echo 'allowed-signers hook must write via mktemp.' >&2
+  exit 1
+}
+grep -qE 'cmp -s' <<<"$signers_code" || {
+  echo 'allowed-signers hook must compare before replacing.' >&2
   exit 1
 }
 grep -qE '^[[:space:]]*mv ' <<<"$signers_code" || {

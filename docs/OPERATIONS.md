@@ -17,7 +17,7 @@ Install, update and recovery procedures are added as `bootstrap` is built.
 ## Enrol this machine's SSH key
 
 Every machine has its own SSH key, `~/.ssh/id_ed25519`. `chezmoi apply` generates it
-the first time (hook `run_onchange_after_12_ssh-key`) and never overwrites, replaces or
+the first time (hook `run_after_12_ssh-key`) and never overwrites, replaces or
 copies it. The same key authenticates you to GitHub and signs your commits, and GitHub
 treats those as two separate enrolments, so the public key is added **twice**.
 
@@ -36,8 +36,9 @@ treats those as two separate enrolments, so the public key is added **twice**.
    that step is informational.
 
 Commit signing uses `gpg.format = ssh` with `~/.config/git/allowed_signers`, which the
-hook `run_onchange_after_13_allowed-signers` writes locally from your public key. It is
-not tracked. After replacing the key, delete that file and run `chezmoi apply`.
+hook `run_after_13_allowed-signers` writes locally from your public key. It is
+not tracked. Both hooks run on every apply, so after replacing or deleting the key,
+`chezmoi apply` regenerates the key if missing and rewrites the file when its content differs.
 
 The key has no passphrase, so at rest it is protected only by disk encryption. Add one
 with `ssh-keygen -p -f ~/.ssh/id_ed25519`; `AddKeysToAgent yes` means you are then asked

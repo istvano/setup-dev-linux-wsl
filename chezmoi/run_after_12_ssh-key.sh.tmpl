@@ -2,6 +2,10 @@
 # Give this machine its own SSH key, and never move it.
 # Ported from setup-dev-mac/chezmoi/run_onchange_after_12_ssh-key.sh.tmpl.
 #
+# run_after_, not run_onchange_: this must run on EVERY apply. chezmoi re-runs a
+# run_onchange_ script only when its rendered text changes, so a deleted key or a failed
+# first attempt would never be retried. The script is guarded and idempotent.
+#
 # Why per-machine keys rather than one key copied between machines:
 #
 #   * A private key that never leaves the machine that generated it cannot be exposed by
