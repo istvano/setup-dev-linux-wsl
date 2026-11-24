@@ -22,20 +22,53 @@ if [[ ! -d "$WORKFLOWS" ]]; then
   exit 1
 fi
 
-# Every `uses:` is pinned to a full commit SHA.
-refute_match 'uses:[[:space:]]+[^#[:space:]]+@(v[0-9]|main|master|latest)' "$WORKFLOWS"
-assert_match 'uses:[[:space:]]+[^@[:space:]]+@[0-9a-f]{40}' "$WORKFLOWS"
+# Every `uses:` line is pinned to a full 40-hex commit SHA. Checked line by line, so
+# one unpinned action cannot hide behind a pinned one. Comment lines are skipped so
+# the explanation of the rule cannot trip it.
+uses_lines="$(grep -R -h -E '^[[:space:]]*(-[[:space:]]+)?uses:' "$WORKFLOWS" || true)"
+[[ -n "$uses_lines" ]] || {
+  echo 'No uses: lines found in the workflows; the pin check would be vacuous.' >&2
+  exit 1
+}
+unpinned="$(grep -v -E 'uses:[[:space:]]+[^@[:space:]]+@[0-9a-f]{40}([[:space:]]|$)' <<<"$uses_lines" || true)"
+[[ -z "$unpinned" ]] || {
+  printf 'Workflow action not pinned to a 40-hex commit SHA:\n%s\n' "$unpinned" >&2
+  exit 1
+}
 
 # Nothing floats.
 refute_match '@latest' "$WORKFLOWS"
 
-# Nothing is piped into a shell. tests/ is excluded so this file's own pattern
-# and commentary cannot match themselves.
+# Nothing is piped into a shell, in any of the usual spellings: `| sh`, `| bash`,
+# `| sudo bash`, `bash <(curl ...)`, `sh -c "$(curl ...)"`. tests/ is excluded so this
+# file's own patterns cannot match themselves, and comment lines are filtered so the
+# files may explain the rule.
 SCAN_PATHS=()
 while IFS= read -r path; do
   SCAN_PATHS+=("$path")
 done < <(existing_paths "$WORKFLOWS" "$ROOT/script" "$ROOT/bootstrap")
-refute_match '(curl|wget)[^|]*\|[[:space:]]*(ba|z)?sh' "${SCAN_PATHS[@]}"
+scan_code="$(grep -R -h -v -E '^[[:space:]]*#' "${SCAN_PATHS[@]}" || true)"
+piped="$(grep -E '(curl|wget)[^|]*\|[[:space:]]*(sudo[[:space:]]+(-[A-Za-z]+[[:space:]]+)*)?(ba|z|da)?sh([[:space:]]|$)|(ba|z|da)?sh[[:space:]]+(-[a-z]+[[:space:]]+)*<\([[:space:]]*(curl|wget)|(ba|z|da)?sh[[:space:]]+-c[[:space:]]+["'"'"']?[$][(][[:space:]]*(curl|wget)' <<<"$scan_code" || true)"
+[[ -z "$piped" ]] || {
+  printf 'Download piped into a shell:\n%s\n' "$piped" >&2
+  exit 1
+}
+
+# The x86_64 integration job: the milestone proof. It runs in the Ubuntu 26.04
+# container (the release the provisioner targets) on an x86_64 runner.
+VALIDATE="$WORKFLOWS/validate.yml"
+assert_match '^  integration:' "$VALIDATE"
+assert_match '^    container: ubuntu:26[.]04$' "$VALIDATE"
+assert_match '^    runs-on: ubuntu-24[.]04$' "$VALIDATE"
+assert_match '^[[:space:]]+sudo[[:space:]]+-u[[:space:]]+dev[[:space:]]+-H' "$VALIDATE"
+# Passwordless sudo exists for the CI user only: it may appear under .github/workflows
+# and nowhere in what the repository ships or runs.
+assert_match 'NOPASSWD' "$WORKFLOWS"
+NOPASSWD_PATHS=()
+while IFS= read -r path; do
+  NOPASSWD_PATHS+=("$path")
+done < <(existing_paths "$ROOT/script" "$ROOT/bootstrap" "$ROOT/chezmoi")
+refute_match 'NOPASSWD' "${NOPASSWD_PATHS[@]}"
 
 ## mise runtimes
 

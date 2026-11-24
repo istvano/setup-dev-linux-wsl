@@ -38,3 +38,154 @@ jobs:
           tar -xzf /tmp/chezmoi.tar.gz -C "$HOME/.local/bin" chezmoi
           echo "$HOME/.local/bin" >>"$GITHUB_PATH"
       - run: ./script/test
+
+  # The milestone proof: the real provisioner, end to end, on x86_64 Ubuntu 26.04.
+  # The runner is ubuntu-24.04 (GitHub offers no 26.04 runner image); the job body
+  # runs inside the 26.04 container, which is the release the repository targets.
+  integration:
+    runs-on: ubuntu-24.04
+    # Deliberate exception to "nothing floats": a tag, not a digest, because the point
+    # of this job is to track the current Ubuntu 26.04 userland, and a digest would
+    # stop testing the release as it actually ships. tests/placement-policy.sh pins
+    # the tag so it cannot drift to another release.
+    container: ubuntu:26.04
+    timeout-minutes: 90
+    defaults:
+      run:
+        shell: bash
+    steps:
+      # git first, so that the checkout is a real repository (without git the
+      # checkout action falls back to a tarball with no .git).
+      - name: Install base tools and create the CI user
+        run: |
+          apt-get update
+          apt-get install -y sudo git ca-certificates
+          useradd --create-home --shell /bin/bash dev
+          # Passwordless sudo for the throwaway CI user ONLY. It is allowed under
+          # .github/workflows and nowhere else; tests/placement-policy.sh refutes
+          # it in script/, bootstrap and chezmoi/.
+          echo 'dev ALL=(ALL) NOPASSWD:ALL' >/etc/sudoers.d/90-dev-ci
+          chmod 0440 /etc/sudoers.d/90-dev-ci
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Copy the checkout into the dev home and seed a gitconfig
+        run: |
+          cp -a "$GITHUB_WORKSPACE" /home/dev/setup-dev-linux-wsl
+          # A pre-existing, different ~/.gitconfig must be backed up, not clobbered.
+          printf '[user]\n\tname = seed\n' >/home/dev/.gitconfig
+          chown -R dev:dev /home/dev
+      - name: Apply
+        run: |
+          sudo -u dev -H bash -lc '
+            set -Eeuo pipefail
+            cd ~/setup-dev-linux-wsl
+            CI=1 ./bootstrap apply --target linux --non-interactive \
+              --git-name CI --git-email ci@example.invalid
+          '
+      - name: Backup of the seeded gitconfig exists
+        run: |
+          sudo -u dev -H bash -lc '
+            set -Eeuo pipefail
+            compgen -G "$HOME/.gitconfig.backup.*" >/dev/null || {
+              echo "no ~/.gitconfig.backup.* found" >&2
+              exit 1
+            }
+            ls -l "$HOME"/.gitconfig.backup.*
+          '
+      - name: Verify
+        run: sudo -u dev -H bash -lc 'cd ~/setup-dev-linux-wsl && ./script/verify'
+      # Every formula the default profiles, productivity-extra and the fish shell would
+      # install must exist in Homebrew and be usable on Linux. A failure here means the
+      # formula moves to chezmoi/dot_config/mise/config.toml.tmpl and gets an ADR.
+      - name: Formula availability
+        run: |
+          sudo -u dev -H bash -lc '
+            set -Eeuo pipefail
+            cd ~/setup-dev-linux-wsl
+            # brew shellenv is vendor-generated shell init, the one permitted eval.
+            eval "$(/home/linuxbrew/.linuxbrew/bin/brew shellenv)"
+            out="$(mktemp)"
+            trap "rm -f \"$out\"" EXIT
+            ./script/render-brewfile \
+              --profiles core,dev,security,kubernetes,backup,productivity-extra \
+              --shell fish --output "$out"
+            mapfile -t formulae < <(sed -nE "s/^brew \"([^\"]+)\".*/\1/p" "$out")
+            echo "${#formulae[@]} formulae to check"
+            ((${#formulae[@]} > 0))
+            info="$(mktemp)"
+            trap "rm -f \"$out\" \"$info\"" EXIT
+            # An unknown formula makes brew info exit non-zero.
+            brew info --formula --json=v2 "${formulae[@]}" >"$info"
+            # Disabled formulae and macOS-only ones (a macos requirement never
+            # holds on Linux) are not usable here.
+            bad="$(jq -r ".formulae[] | select(.disabled or ([.requirements[]? | select(.name == \"macos\")] | length > 0)) | .name" "$info")"
+            [[ -z "$bad" ]] || {
+              printf "Not usable on Linux:\n%s\n" "$bad" >&2
+              exit 1
+            }
+            echo "all ${#formulae[@]} formulae are known and Linux-usable"
+          '
+      - name: Record state before the second apply
+        run: |
+          sudo -u dev -H bash -lc '
+            set -Eeuo pipefail
+            mkdir -p ~/.ci-state
+            git -C /home/linuxbrew/.linuxbrew/Homebrew rev-parse HEAD >~/.ci-state/brew-head
+            stat -c %i /home/linuxbrew/.linuxbrew/Homebrew/.git >~/.ci-state/brew-git-inode
+            stat -c %y ~/.ssh/id_ed25519 >~/.ci-state/ssh-key-mtime
+          '
+      # The recorded chezmoi data is the source of truth on a re-run, so the second
+      # apply needs no identity or profile flags.
+      - name: Second apply
+        run: |
+          sudo -u dev -H bash -lc '
+            set -Eeuo pipefail
+            cd ~/setup-dev-linux-wsl
+            CI=1 ./bootstrap apply --target linux --non-interactive
+          '
+      - name: Idempotency
+        run: |
+          sudo -u dev -H bash -lc '
+            set -Eeuo pipefail
+            eval "$(/home/linuxbrew/.linuxbrew/bin/brew shellenv)"
+            brew_repo=/home/linuxbrew/.linuxbrew/Homebrew
+            # No pending file or symlink changes. Scripts are excluded: the identity
+            # hooks are run_after_ and so always appear as "would run".
+            diff_out="$(chezmoi diff --no-pager --include files,symlinks,dirs)"
+            [[ -z "$diff_out" ]] || {
+              printf "chezmoi diff is not empty after the second apply:\n%s\n" "$diff_out" >&2
+              exit 1
+            }
+            # install-homebrew runs `brew update` on every apply, so HEAD may move
+            # forward legitimately and equality would be a false failure. What must not
+            # happen is a re-clone. Two checks: the .git directory is the same inode (a
+            # fresh clone creates a new one), and the old HEAD is an ancestor of, or
+            # equal to, the new HEAD (history only moves forward).
+            [[ "$(stat -c %i "$brew_repo/.git")" == "$(cat ~/.ci-state/brew-git-inode)" ]] || {
+              echo "Homebrew .git inode changed: the second apply re-cloned Homebrew." >&2
+              exit 1
+            }
+            git -C "$brew_repo" merge-base --is-ancestor "$(cat ~/.ci-state/brew-head)" HEAD || {
+              echo "Homebrew HEAD is no longer a descendant of the first apply HEAD." >&2
+              exit 1
+            }
+            # The per-machine signing key is never regenerated.
+            [[ "$(stat -c %y ~/.ssh/id_ed25519)" == "$(cat ~/.ci-state/ssh-key-mtime)" ]] || {
+              echo "~/.ssh/id_ed25519 changed on the second apply." >&2
+              exit 1
+            }
+            echo "idempotent"
+          '
+      - name: Refuse to run as root
+        run: |
+          # The job runs as root in the container, so this is a root invocation.
+          cd /home/dev/setup-dev-linux-wsl
+          err="$(mktemp)"
+          if sudo ./bootstrap plan 2>"$err"; then
+            echo "sudo ./bootstrap plan unexpectedly succeeded" >&2
+            exit 1
+          fi
+          cat "$err"
+          grep -q "normal user" "$err" || {
+            echo "refusal did not mention a normal user" >&2
+            exit 1
+          }
