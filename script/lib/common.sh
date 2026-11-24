@@ -89,3 +89,68 @@ atomic_write() {
   cat >"$tmp"
   mv "$tmp" "$path"
 }
+
+# --- Platform detection and preflight guards -------------------------------------
+# The file paths below are overridable so tests can point them at fixtures.
+
+# Print "wsl" when the kernel reports Microsoft's build or WSL_DISTRO_NAME is set,
+# otherwise "linux".
+detect_target() {
+  local file="${KERNEL_OSRELEASE_FILE:-/proc/sys/kernel/osrelease}" release=""
+  [[ -r "$file" ]] && release="$(cat "$file")"
+  shopt -s nocasematch
+  if [[ "$release" == *microsoft* || -n "${WSL_DISTRO_NAME:-}" ]]; then
+    shopt -u nocasematch
+    printf 'wsl\n'
+  else
+    shopt -u nocasematch
+    printf 'linux\n'
+  fi
+}
+
+# Die unless the detected target is EXPECTED (wsl or linux).
+require_target() {
+  local expected="$1" actual
+  actual="$(detect_target)"
+  [[ "$expected" == "$actual" ]] ||
+    die "Requested --target $expected but this machine is $actual."
+}
+
+# Only Ubuntu 26.04 is supported. os-release is sourced in a subshell, not grepped.
+require_supported_ubuntu() {
+  local file="${OS_RELEASE_FILE:-/etc/os-release}" found
+  [[ -r "$file" ]] || die "Cannot read $file; only Ubuntu 26.04 is supported."
+  found="$(
+    ID="" VERSION_ID=""
+    # shellcheck disable=SC1090  # the path is deliberately variable
+    . "$file"
+    printf '%s %s' "${ID:-unknown}" "${VERSION_ID:-unknown}"
+  )"
+  [[ "$found" == "ubuntu 26.04" ]] ||
+    die "Only Ubuntu 26.04 is supported; found: $found."
+}
+
+require_x86_64() {
+  local arch="${UNAME_M:-$(uname -m)}"
+  [[ "$arch" == "x86_64" ]] || die "Only x86_64 is supported; found: $arch."
+}
+
+# Returns 0 when running as root. Separate so tests can stub it (EUID is readonly).
+is_root() { [[ "${EUID}" -eq 0 ]]; }
+
+require_not_root() {
+  if is_root; then
+    die "Run as your normal user; the scripts call sudo themselves."
+  fi
+}
+
+# Print any .git directories under MNT_ROOT/* (default /mnt, the Windows drives under
+# WSL) to depth 4. Repos on /mnt are slow and have the wrong permissions and line
+# endings; verify reports them.
+repos_under_mnt() {
+  local root="${MNT_ROOT:-/mnt}" dir
+  for dir in "$root"/*; do
+    [[ -d "$dir" ]] || continue
+    find "$dir" -maxdepth 4 -type d -name .git 2>/dev/null || true
+  done
+}

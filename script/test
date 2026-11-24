@@ -11,6 +11,7 @@ TESTS=(
   shell-syntax
   format
   placement-policy
+  platform
 )
 
 for test in "${TESTS[@]}"; do
