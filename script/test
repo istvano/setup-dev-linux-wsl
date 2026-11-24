@@ -10,6 +10,7 @@ require_bash5
 TESTS=(
   shell-syntax
   format
+  placement-policy
 )
 
 for test in "${TESTS[@]}"; do
