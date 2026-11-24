@@ -267,6 +267,83 @@ if ! ((rc != 0)) || [[ "$hook_out" != *"mise is not installed"* ]]; then
   exit 1
 fi
 
+# --- ADR-010: the krew hook, run for real against a stub kubectl. Gated on the
+# kubernetes profile; idempotent; a failed plugin install fails the hook so chezmoi
+# retries; ~/.krew/bin is created first.
+KREW_HOOK="$ROOT/chezmoi/run_onchange_after_28_krew-plugins.sh.tmpl"
+sed 's|^profiles = .*|profiles = ["core", "dev"]|' "$ROOT/tests/fixtures/chezmoi/linux.toml" >"$TMP/no-k8s.toml"
+[[ -z "$(render "$TMP/no-k8s.toml" "$KREW_HOOK" | tr -d '[:space:]')" ]] || {
+  echo 'krew hook renders without the kubernetes profile.' >&2
+  exit 1
+}
+render linux.toml "$KREW_HOOK" >"$TMP/krew.sh"
+[[ -s "$TMP/krew.sh" ]] || {
+  echo 'krew hook renders empty with the kubernetes profile.' >&2
+  exit 1
+}
+make_kubectl_stub() { # make_kubectl_stub DIR INSTALLED FAIL_PLUGIN
+  mkdir -p "$1"
+  cat >"$1/kubectl" <<STUB
+#!/bin/sh
+# stub: kubectl krew {update|list|install NAME}; records installs in \$KREW_LOG
+[ "\$1" = krew ] || exit 0
+case "\$2" in
+  update) exit 0 ;;
+  list) printf '%s\n' $2; exit 0 ;;
+  install)
+    [ "\$3" = "$3" ] && { echo "stub: cannot install \$3" >&2; exit 1; }
+    echo "\$3" >>"\$KREW_LOG"
+    exit 0 ;;
+esac
+STUB
+  chmod +x "$1/kubectl"
+  printf '#!/bin/sh\nexit 0\n' >"$1/kubectl-krew"
+  chmod +x "$1/kubectl-krew"
+}
+krew_hook() { # krew_hook STUB_DIR: output in $hook_out, status in $rc, installs in $TMP/krew.log
+  rc=0
+  : >"$TMP/krew.log"
+  rm -rf "$TMP/khome"
+  mkdir -p "$TMP/khome"
+  hook_out="$(HOME="$TMP/khome" KREW_LOG="$TMP/krew.log" PATH="$1:/usr/bin:/bin" "$BASH_BIN" "$TMP/krew.sh" 2>&1)" || rc=$?
+}
+make_kubectl_stub "$TMP/krew-ok" '' none
+krew_hook "$TMP/krew-ok"
+((rc == 0)) || {
+  printf 'krew hook failed with a working krew:\n%s\n' "$hook_out" >&2
+  exit 1
+}
+[[ "$(sort "$TMP/krew.log" | paste -sd, -)" == 'images,neat,tree,view-secret,whoami' ]] || {
+  printf 'krew hook installed the wrong plugins: %s\n' "$(paste -sd, "$TMP/krew.log")" >&2
+  exit 1
+}
+[[ -d "$TMP/khome/.krew/bin" ]] || {
+  echo 'krew hook did not create ~/.krew/bin.' >&2
+  exit 1
+}
+make_kubectl_stub "$TMP/krew-all" 'neat view-secret tree whoami images' none
+krew_hook "$TMP/krew-all"
+[[ "$rc" == 0 && ! -s "$TMP/krew.log" ]] || {
+  printf 'krew hook is not idempotent (rc %s, installed: %s)\n' "$rc" "$(paste -sd, "$TMP/krew.log")" >&2
+  exit 1
+}
+make_kubectl_stub "$TMP/krew-fail" 'neat' tree
+krew_hook "$TMP/krew-fail"
+((rc != 0)) || {
+  printf 'krew hook exited 0 although a plugin install failed:\n%s\n' "$hook_out" >&2
+  exit 1
+}
+grep -qx 'whoami' "$TMP/krew.log" || {
+  echo 'krew hook stopped at the first failure instead of trying the other plugins.' >&2
+  exit 1
+}
+mkdir -p "$TMP/krew-none"
+krew_hook "$TMP/krew-none"
+((rc != 0)) || {
+  echo 'krew hook exited 0 although kubectl is missing.' >&2
+  exit 1
+}
+
 # --- .chezmoiignore keeps repository documents out of $HOME.
 for fixture in "${FIXTURES[@]}"; do
   ignored="$(render "$fixture" "$ROOT/chezmoi/.chezmoiignore")"

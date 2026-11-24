@@ -49,9 +49,9 @@ end
 # APPENDED, so a plugin never shadows a declared Homebrew binary of the same name.
 #
 # Not fish_add_path: it silently skips a directory that does not exist (see ~/.local/bin
-# above), and nothing creates ~/.krew/bin before krew installs its first plugin, so the
-# entry would be missing in every shell started before that. Appended unconditionally
-# instead, exactly as .zshrc does, so a plugin installed in this session is runnable
+# above). run_onchange_after_28_krew-plugins creates ~/.krew/bin on apply, but a shell that
+# started before that apply would still lack the entry, so it is appended unconditionally
+# instead, exactly as .zshrc does, and a plugin installed in this session is runnable
 # without a new shell. `contains` keeps it idempotent.
 contains -- $HOME/.krew/bin $PATH; or set -gxa PATH $HOME/.krew/bin
 {{- end }}
