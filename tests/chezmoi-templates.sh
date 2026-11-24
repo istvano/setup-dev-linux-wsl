@@ -49,7 +49,7 @@ fi
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
 
-FIXTURES=(wsl.toml linux.toml full.toml)
+FIXTURES=(wsl.toml linux.toml full.toml gpg.toml)
 
 # --- Dynamic: every template executes under every fixture.
 for fixture in "${FIXTURES[@]}"; do
@@ -101,6 +101,74 @@ got="$(grep -E '^profiles = ' <<<"$defaults")"
 # toToml may wrap or reorder whitespace; compare the quoted names only.
 [[ "$(grep -oE '"[^"]+"' <<<"$got" | tr -d '\n')" == "$(grep -oE '"[^"]+"' <<<"$want" | tr -d '\n')" ]] || {
   printf 'default profiles %s != DEFAULT_PROFILES %s\n' "$got" "$want" >&2
+  exit 1
+}
+
+# --- Git: ssh signing by default, openpgp on request, work split only when set.
+git_ssh="$(render linux.toml "$ROOT/chezmoi/dot_gitconfig.tmpl")"
+for expect in 'format = ssh' 'allowedSignersFile' 'autocrlf = false' 'gpgsign = true'; do
+  grep -qF -- "$expect" <<<"$git_ssh" || {
+    printf '.gitconfig (ssh) lacks: %s\n' "$expect" >&2
+    exit 1
+  }
+done
+grep -qE '^[[:space:]]*signingkey = "~/\.ssh/id_ed25519\.pub"' <<<"$git_ssh" || {
+  echo '.gitconfig (ssh) signingkey is not the per-machine key path.' >&2
+  exit 1
+}
+! grep -q 'includeIf' <<<"$git_ssh" || {
+  echo '.gitconfig has includeIf with no workGitEmail.' >&2
+  exit 1
+}
+# The only credential helper is gh, scoped to github.com; no keychain helper.
+! grep -qE 'helper = (osxkeychain|store|cache)' <<<"$git_ssh" || {
+  echo '.gitconfig sets a non-gh credential helper.' >&2
+  exit 1
+}
+grep -qF 'git credential' <<<"$git_ssh" || grep -qF 'auth git-credential' <<<"$git_ssh" || {
+  echo '.gitconfig lacks the gh credential helper.' >&2
+  exit 1
+}
+git_work="$(render full.toml "$ROOT/chezmoi/dot_gitconfig.tmpl")"
+grep -qF 'includeIf "gitdir:' <<<"$git_work" || {
+  echo '.gitconfig lacks includeIf when workGitEmail is set.' >&2
+  exit 1
+}
+grep -qF 'work@example.invalid' <<<"$(render full.toml "$ROOT/chezmoi/dot_config/git/config-work.tmpl")" || {
+  echo 'config-work lacks the work email.' >&2
+  exit 1
+}
+git_gpg="$(render gpg.toml "$ROOT/chezmoi/dot_gitconfig.tmpl")"
+grep -qF 'format = openpgp' <<<"$git_gpg" || {
+  echo '.gitconfig (gpg) lacks format = openpgp.' >&2
+  exit 1
+}
+! grep -q 'allowedSignersFile' <<<"$git_gpg" || {
+  echo '.gitconfig (gpg) carries ssh signing settings.' >&2
+  exit 1
+}
+
+# --- SSH: Ubuntu's ssh must accept the rendered config. `ssh -G` parses it,
+# including every algorithm allowlist, without connecting. The test uses whichever
+# ssh is on PATH; CI and the container gate run it on Ubuntu's.
+if command -v ssh >/dev/null 2>&1; then
+  render linux.toml "$ROOT/chezmoi/private_dot_ssh/config.tmpl" >"$TMP/ssh_config"
+  ssh_out="$(ssh -G -F "$TMP/ssh_config" example.invalid)" || {
+    echo 'ssh -G rejected the rendered ssh config.' >&2
+    exit 1
+  }
+  for expect in 'identitiesonly yes' 'forwardagent no' 'identityfile ~/.ssh/id_ed25519'; do
+    grep -qxF "$expect" <<<"$ssh_out" || {
+      printf 'ssh -G output lacks: %s\n' "$expect" >&2
+      exit 1
+    }
+  done
+else
+  echo '  ssh -G check: ssh not installed, skipped'
+fi
+ssh_src="$(render linux.toml "$ROOT/chezmoi/private_dot_ssh/config.tmpl")"
+[[ "$(grep -v '^[[:space:]]*#' <<<"$ssh_src" | grep -m1 -v '^[[:space:]]*$')" == 'Include ~/.ssh/config.d/*' ]] || {
+  echo 'ssh config: Include ~/.ssh/config.d/* is not the first directive.' >&2
   exit 1
 }
 

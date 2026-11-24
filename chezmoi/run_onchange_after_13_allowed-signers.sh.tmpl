@@ -1,0 +1,39 @@
+#!/usr/bin/env bash
+# Write ~/.config/git/allowed_signers so `git verify-commit` and `git log --show-signature`
+# can verify commits signed with this machine's key.
+#
+# The file is generated locally from the local public key and is not tracked: it names
+# this machine's key, which exists nowhere else. It is re-generated when the emails below
+# change; after replacing the key itself, remove the file and run `chezmoi apply` again.
+#
+# Format, one line per identity: <email> <public key line>
+#   gitEmail:     {{ .gitEmail }}
+#   workGitEmail: {{ .workGitEmail }}
+set -Eeuo pipefail
+
+PUB="{{ .chezmoi.homeDir }}/.ssh/id_ed25519.pub"
+OUT="{{ .chezmoi.homeDir }}/.config/git/allowed_signers"
+
+if [[ ! -f "$PUB" ]]; then
+  echo "[WARN] $PUB does not exist; not writing $OUT. Run chezmoi apply again after the key exists." >&2
+  exit 0
+fi
+
+pubkey="$(head -n 1 "$PUB")"
+mkdir -p "$(dirname "$OUT")"
+
+# Temp file in the destination directory, then an atomic rename: a reader never sees a
+# half-written trust file, and an interrupted run leaves the old one in place.
+tmp="$(mktemp "$OUT.XXXXXX")"
+trap 'rm -f "$tmp"' EXIT
+
+{
+  printf '%s %s\n' {{ .gitEmail | quote }} "$pubkey"
+{{- if .workGitEmail }}
+  printf '%s %s\n' {{ .workGitEmail | quote }} "$pubkey"
+{{- end }}
+} >"$tmp"
+
+chmod 644 "$tmp"
+mv "$tmp" "$OUT"
+trap - EXIT

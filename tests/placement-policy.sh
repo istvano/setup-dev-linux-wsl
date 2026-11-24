@@ -220,4 +220,43 @@ else
   echo '  config.fish syntax: fish not installed, skipped'
 fi
 
+## git, ssh and per-machine signing identity
+
+KEY_HOOK="$ROOT/chezmoi/run_onchange_after_12_ssh-key.sh.tmpl"
+SIGNERS_HOOK="$ROOT/chezmoi/run_onchange_after_13_allowed-signers.sh.tmpl"
+for file in "$KEY_HOOK" "$SIGNERS_HOOK" "$ROOT/script/identity"; do
+  [[ -f "$file" ]] || {
+    printf 'Missing identity file: %s\n' "$file" >&2
+    exit 1
+  }
+done
+# The key hook guards generation behind an existing-key check and never removes or
+# regenerates a key in place: no rm, no -y (re-derive), no overwrite-by-force.
+assert_match '\[\[ -f ' "$KEY_HOOK"
+keygen_line="$(grep -n 'ssh-keygen -t' "$KEY_HOOK" | head -1 | cut -d: -f1)"
+guard_line="$(grep -n '\[\[ -f ' "$KEY_HOOK" | head -1 | cut -d: -f1)"
+[[ -n "$keygen_line" && -n "$guard_line" && "$guard_line" -lt "$keygen_line" ]] || {
+  echo 'ssh-key hook: the [[ -f guard must precede ssh-keygen.' >&2
+  exit 1
+}
+key_code="$(code_lines "$KEY_HOOK")"
+! grep -qE '(^|[[:space:]])rm[[:space:]]|ssh-keygen[^|]*[[:space:]]-y([[:space:]]|$)|y\|yes' <<<"$key_code" || {
+  echo 'ssh-key hook removes or re-derives a key.' >&2
+  exit 1
+}
+# The allowed_signers hook publishes through a temp file and an atomic mv.
+signers_code="$(code_lines "$SIGNERS_HOOK")"
+grep -q 'mktemp' <<<"$signers_code" || {
+  echo 'allowed-signers hook must write via mktemp.' >&2
+  exit 1
+}
+grep -qE '^[[:space:]]*mv ' <<<"$signers_code" || {
+  echo 'allowed-signers hook must publish with mv.' >&2
+  exit 1
+}
+# The ssh config never delegates to a macOS agent or keychain, and never forwards.
+ssh_cfg="$ROOT/chezmoi/private_dot_ssh/config.tmpl"
+refute_match '^[[:space:]]*(IdentityAgent|UseKeychain)' "$ssh_cfg"
+refute_match '^[[:space:]]*ForwardAgent[[:space:]]+yes' "$ssh_cfg"
+
 echo 'placement-policy: OK'
