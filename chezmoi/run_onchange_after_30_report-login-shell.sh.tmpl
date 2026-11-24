@@ -1,0 +1,32 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+
+# Reports the account login shell against the selected shell. Changes nothing.
+# Ported from setup-dev-mac/chezmoi/run_onchange_after_30_report-login-shell.sh.tmpl.
+#
+# run_onchange rather than run_once: the selection below is part of the script, so
+# switching shells re-runs this and re-reports.
+#
+# Nothing here calls chsh. Reassigning the login shell is a privileged change to the
+# account, and this repository keeps that class of operation manual.
+SELECTED={{ .shell | quote }}
+
+{{ template "brew-shellenv" . }}
+
+# $SHELL is the login shell of the account running this script; a chezmoi run script
+# inherits the environment of the apply, which carries it.
+if [[ "$(basename "${SHELL:-}")" == "$SELECTED" ]]; then
+  exit 0
+fi
+
+case "$SELECTED" in
+  zsh) selected_path=/usr/bin/zsh ;;
+  *) selected_path="$(command -v "$SELECTED" 2>/dev/null || true)" ;;
+esac
+
+if [[ -z "$selected_path" ]]; then
+  echo "[WARN] $SELECTED is not on PATH; check that its profile fragment installed." >&2
+  exit 0
+fi
+
+echo "[INFO] Login shell is ${SHELL:-unknown}; to make $SELECTED the login shell, run: chsh -s $selected_path" >&2
