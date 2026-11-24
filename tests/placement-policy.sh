@@ -37,4 +37,20 @@ while IFS= read -r path; do
 done < <(existing_paths "$WORKFLOWS" "$ROOT/script" "$ROOT/bootstrap")
 refute_match '(curl|wget)[^|]*\|[[:space:]]*(ba|z)?sh' "${SCAN_PATHS[@]}"
 
+## mise runtimes
+
+MISE_CONFIG="$ROOT/chezmoi/dot_config/mise/config.toml.tmpl"
+RUNTIMES_HOOK="$ROOT/chezmoi/run_onchange_after_20_configure-runtimes.sh.tmpl"
+
+# Runtimes are pinned to explicit versions; a floating one changes the toolchain
+# under a project without any edit.
+refute_match '"latest"' "$MISE_CONFIG"
+refute_match '= *"lts"' "$MISE_CONFIG"
+
+# Homebrew lives under /home/linuxbrew; the Apple Silicon prefix must not leak in.
+refute_match '/opt/homebrew' "$ROOT/chezmoi"
+
+# The hook provisions the declared runtimes.
+assert_match 'mise install' "$RUNTIMES_HOOK"
+
 echo 'placement-policy: OK'
