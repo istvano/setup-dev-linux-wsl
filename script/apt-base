@@ -12,7 +12,7 @@ LIST="${APT_BASE_LIST:-$ROOT/apt/base.list}"
 
 usage() {
   echo 'Usage: script/apt-base [--check]' >&2
-  exit 2
+  exit 1
 }
 
 # Print package names from the list: comments and blank lines stripped.

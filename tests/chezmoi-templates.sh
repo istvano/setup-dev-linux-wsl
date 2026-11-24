@@ -58,6 +58,38 @@ for fixture in "${FIXTURES[@]}"; do
   done
 done
 
+# --- #8: every rendered run_* hook is valid bash and shellcheck-clean, under every
+# fixture. script/shell-files cannot see these (they are templates until rendered),
+# so they are linted here. An empty render (a hook gated off by profile) is skipped.
+hooks_linted=0
+for fixture in "${FIXTURES[@]}"; do
+  for template in "${TEMPLATES[@]}"; do
+    [[ "$(basename "$template")" == run_* ]] || continue
+    rendered_hook="$TMP/hook.sh"
+    render "$fixture" "$template" >"$rendered_hook"
+    [[ -n "$(tr -d '[:space:]' <"$rendered_hook")" ]] || continue
+    bash -n "$rendered_hook" || {
+      printf 'bash -n rejects %s rendered with %s\n' "$template" "$fixture" >&2
+      exit 1
+    }
+    if command -v shellcheck >/dev/null 2>&1; then
+      shellcheck -s bash "$rendered_hook" || {
+        printf 'shellcheck rejects %s rendered with %s\n' "$template" "$fixture" >&2
+        exit 1
+      }
+    elif [[ "${REQUIRE_LINTERS:-0}" == "1" ]]; then
+      echo 'shellcheck is required when REQUIRE_LINTERS=1.' >&2
+      exit 1
+    fi
+    hooks_linted=$((hooks_linted + 1))
+  done
+done
+((hooks_linted > 0)) || {
+  echo 'No run_* hook was linted; the selector is broken.' >&2
+  exit 1
+}
+command -v shellcheck >/dev/null 2>&1 || echo '  rendered hooks: shellcheck not installed, bash -n only'
+
 # --- The data template: keys, defaults and detected values.
 TOML_TMPL="$ROOT/chezmoi/.chezmoi.toml.tmpl"
 rendered="$(render linux.toml "$TOML_TMPL")"

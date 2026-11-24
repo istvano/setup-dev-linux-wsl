@@ -41,6 +41,12 @@ usage() {
   exit 1
 }
 
+# chezmoi, mise and uv come from the core profile, and every later step needs them, so
+# a list without core is refused here rather than failing halfway through apply.
+require_core_profile() {
+  [[ ",$1," == *,core,* ]] || die "Profiles must include core (it provides chezmoi, mise and uv): $1"
+}
+
 # A comma, '=' or double quote would be mangled by chezmoi's key=value,key=value flag
 # syntax (pflag parses the list as CSV, where '"' is the quoting character).
 require_promptable() {
@@ -118,6 +124,7 @@ fi
 [[ "$target" == wsl || "$target" == linux ]] || die "Unknown --target: $target (use wsl or linux)."
 require_target "$target"
 validate_profiles "$profiles"
+require_core_profile "$profiles"
 [[ "$shell_choice" == zsh || "$shell_choice" == fish ]] || die "Unknown --shell: $shell_choice (use zsh or fish)."
 
 CHEZMOI_CONFIG="$(chezmoi_config_path)"
@@ -169,6 +176,7 @@ reconcile_with_chezmoi_data() {
     git_email="$recorded_email"
   fi
   validate_profiles "$profiles"
+  require_core_profile "$profiles"
   recorded=1
   log "Using the profiles, shell and identity recorded in $CHEZMOI_CONFIG."
 }

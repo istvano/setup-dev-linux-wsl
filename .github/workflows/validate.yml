@@ -13,6 +13,9 @@ jobs:
       # Actions are pinned to full commit SHAs; tests/placement-policy.sh
       # asserts it.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # No later step needs the job token; do not leave it in .git/config.
+          persist-credentials: false
       - name: Install validation tools
         run: |
           sudo apt-get update
@@ -67,6 +70,8 @@ jobs:
           echo 'dev ALL=(ALL) NOPASSWD:ALL' >/etc/sudoers.d/90-dev-ci
           chmod 0440 /etc/sudoers.d/90-dev-ci
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - name: Copy the checkout into the dev home and seed a gitconfig
         run: |
           cp -a "$GITHUB_WORKSPACE" /home/dev/setup-dev-linux-wsl
@@ -96,11 +101,18 @@ jobs:
       # Every formula the default profiles, productivity-extra and the fish shell would
       # install must exist in Homebrew and be usable on Linux. A failure here means the
       # formula moves to chezmoi/dot_config/mise/config.toml.tmpl and gets an ADR.
+      # It runs even when an earlier step failed, because an unknown formula is the
+      # likeliest reason for a failed apply and this step names it.
       - name: Formula availability
+        if: ${{ !cancelled() }}
         run: |
           sudo -u dev -H bash -lc '
             set -Eeuo pipefail
             cd ~/setup-dev-linux-wsl
+            [[ -x /home/linuxbrew/.linuxbrew/bin/brew ]] || {
+              echo "Homebrew is not installed: apply failed before it, so formulae cannot be checked." >&2
+              exit 1
+            }
             # brew shellenv is vendor-generated shell init, the one permitted eval.
             eval "$(/home/linuxbrew/.linuxbrew/bin/brew shellenv)"
             out="$(mktemp)"
@@ -132,6 +144,11 @@ jobs:
             git -C /home/linuxbrew/.linuxbrew/Homebrew rev-parse HEAD >~/.ci-state/brew-head
             stat -c %i /home/linuxbrew/.linuxbrew/Homebrew/.git >~/.ci-state/brew-git-inode
             stat -c %y ~/.ssh/id_ed25519 >~/.ci-state/ssh-key-mtime
+            # Every backup file bootstrap has made so far. Tool trees and the checkout
+            # are pruned: they are not chezmoi targets and may hold unrelated names.
+            find "$HOME" \( -path "$HOME/.cache" -o -path "$HOME/.local/share" \
+              -o -path "$HOME/setup-dev-linux-wsl" -o -path "$HOME/.ci-state" \) -prune \
+              -o -name "*.backup.*" -print | sort >~/.ci-state/backups
           '
       # The recorded chezmoi data is the source of truth on a re-run, so the second
       # apply needs no identity or profile flags.
@@ -173,7 +190,34 @@ jobs:
               echo "~/.ssh/id_ed25519 changed on the second apply." >&2
               exit 1
             }
+            # A re-run with nothing to change backs nothing up.
+            find "$HOME" \( -path "$HOME/.cache" -o -path "$HOME/.local/share" \
+              -o -path "$HOME/setup-dev-linux-wsl" -o -path "$HOME/.ci-state" \) -prune \
+              -o -name "*.backup.*" -print | sort >~/.ci-state/backups-after
+            diff ~/.ci-state/backups ~/.ci-state/backups-after || {
+              echo "The second apply created backup files (above); something was rewritten." >&2
+              exit 1
+            }
             echo "idempotent"
+          '
+      # F1 regression. An interactive first run accepts any name, including one with a
+      # comma, and later runs must keep working. bootstrap refuses such a name as a
+      # flag, so it is written into the record directly, as the operator would have.
+      # A separate third apply, so the second stays a pure no-change re-run.
+      - name: Re-run with a recorded name containing a comma
+        run: |
+          sudo -u dev -H bash -lc '
+            set -Eeuo pipefail
+            cfg=~/.config/chezmoi/chezmoi.toml
+            sed -i "s/^gitName = .*/gitName = \"CI, Bot\"/" "$cfg"
+            grep -qxF "gitName = \"CI, Bot\"" "$cfg"
+            cd ~/setup-dev-linux-wsl
+            CI=1 ./bootstrap apply --target linux --non-interactive
+            name="$(git config --global user.name)"
+            [[ "$name" == "CI, Bot" ]] || {
+              echo "user.name after the re-run is \"$name\", expected \"CI, Bot\"" >&2
+              exit 1
+            }
           '
       - name: Refuse to run as root
         run: |

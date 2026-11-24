@@ -69,6 +69,24 @@ while IFS= read -r path; do
   NOPASSWD_PATHS+=("$path")
 done < <(existing_paths "$ROOT/script" "$ROOT/bootstrap" "$ROOT/chezmoi")
 refute_match 'NOPASSWD' "${NOPASSWD_PATHS[@]}"
+# M45: no checkout leaves the job token in .git/config for later steps to read.
+n_checkout="$(grep -c -E '^[[:space:]]*-[[:space:]]+uses:[[:space:]]+actions/checkout@' "$VALIDATE")"
+n_persist="$(grep -c -E '^[[:space:]]+persist-credentials:[[:space:]]+false$' "$VALIDATE" || true)"
+((n_checkout > 0 && n_checkout == n_persist)) || {
+  printf 'Every checkout needs persist-credentials: false (%s checkouts, %s set).\n' "$n_checkout" "$n_persist" >&2
+  exit 1
+}
+# M43: formula availability still runs (and diagnoses) when apply failed.
+grep -A1 -E '^[[:space:]]+- name: Formula availability$' "$VALIDATE" |
+  grep -qE '^[[:space:]]+if: [$][{][{] !cancelled[(][)] [}][}]$' || {
+  echo 'The Formula availability step must run with if: !cancelled().' >&2
+  exit 1
+}
+# #7: the second apply creates no new backups, and a recorded name with a comma
+# survives a re-run (F1).
+assert_match 'backup' "$VALIDATE"
+assert_match 'ci-state/backups' "$VALIDATE"
+assert_match 'gitName = \\"CI, Bot\\"' "$VALIDATE"
 
 ## mise runtimes
 

@@ -57,20 +57,25 @@ rc=0
   echo "--help must exit 0" >&2
   exit 1
 }
+# Every refusal below is reached the same way by plan and apply (the guards and the
+# chezmoi-record reconciliation run before either does anything), so the tests use
+# plan: if a guard ever regressed, the test would run read-only checks, not installs.
 refuse "unknown subcommand" "Usage" frobnicate
-refuse "--target mac" "Unknown --target" apply --target mac
-refuse "--target wsl on plain linux" "Requested --target wsl" apply --target wsl
-refuse "--profiles nope" "Unknown profile: nope" apply --profiles nope
-refuse "--shell bash" "Unknown --shell" apply --shell bash
-refuse "--non-interactive without identity" "--git-name and --git-email" apply --non-interactive
+refuse "--target mac" "Unknown --target" plan --target mac
+refuse "--target wsl on plain linux" "Requested --target wsl" plan --target wsl
+refuse "--profiles nope" "Unknown profile: nope" plan --profiles nope
+# #9: chezmoi, mise and uv come from core; a profile list without it cannot work.
+refuse "--profiles without core" "must include core" plan --profiles dev,security
+refuse "--shell bash" "Unknown --shell" plan --shell bash
+refuse "--non-interactive without identity" "--git-name and --git-email" plan --non-interactive
 refuse "--non-interactive with only a name" "--git-name and --git-email" \
-  apply --non-interactive --git-name T
-refuse "option swallowed as a value" "requires a value" apply --profiles --shell fish
+  plan --non-interactive --git-name T
+refuse "option swallowed as a value" "requires a value" plan --profiles --shell fish
 
 # chezmoi's --promptString is a comma-separated key=value list, so a comma or '='
 # in a value would be mangled into another key. Reject, naming the problem.
 for bad in 'A,B' 'A=B' 'A"B'; do
-  err="$(bs apply --non-interactive --git-name "$bad" --git-email t@example.invalid 2>&1 || true)"
+  err="$(bs plan --non-interactive --git-name "$bad" --git-email t@example.invalid 2>&1 || true)"
   [[ "$err" == *"must not contain"* ]] || {
     printf 'git-name %q: expected a comma/= rejection, got: %s\n' "$bad" "$err" >&2
     exit 1
@@ -90,7 +95,7 @@ if command -v chezmoi >/dev/null 2>&1; then
   conflict_case() {
     local fragment="$1" key="$2" err
     shift 2
-    if err="$(bs apply "$@" 2>&1 >"$out.stdout")"; then
+    if err="$(bs plan "$@" 2>&1 >"$out.stdout")"; then
       echo "conflicting $key must fail" >&2
       exit 1
     fi
@@ -109,6 +114,13 @@ if command -v chezmoi >/dev/null 2>&1; then
   conflict_case name gitName --git-name Other --git-email rec@example.invalid
   conflict_case email gitEmail --git-name Rec --git-email other@example.invalid
   rm -f "$out" "$out.stdout"
+  # #9 also holds for a recorded profile list: a record without core is refused.
+  cfg="$HOME_T/.config/chezmoi/chezmoi.toml"
+  cp "$cfg" "$cfg.orig"
+  sed -i.tmp 's/^profiles = .*/profiles = ["dev"]/' "$cfg"
+  refuse "recorded profiles without core" "must include core" plan
+  mv "$cfg.orig" "$cfg"
+  rm -f "$cfg.tmp"
 
   # --- F1: a re-run must not feed the recorded identity back through chezmoi's prompt
   # flags. --promptString is a comma-separated key=value list, so a recorded name an

@@ -22,6 +22,14 @@ refute_match '^(docker\.io|podman-docker|cuda-drivers|nvidia-[a-z0-9-]+)[[:space
 
 [[ -x "$ROOT/script/apt-base" ]] || fail "script/apt-base is missing or not executable"
 
+# Usage errors exit 1, like every other script (2 is not a usage convention here).
+for args in --bogus '--check extra'; do
+  status=0
+  # shellcheck disable=SC2086  # deliberate split: "--check extra" is two arguments
+  "$ROOT/script/apt-base" $args >/dev/null 2>&1 || status=$?
+  [[ "$status" -eq 1 ]] || fail "apt-base $args should exit 1 (usage error), got $status"
+done
+
 # Behaviour: needs dpkg-query (Debian/Ubuntu only).
 if ! command -v dpkg-query >/dev/null 2>&1; then
   if [[ "${REQUIRE_LINTERS:-0}" == 1 ]]; then
