@@ -15,7 +15,9 @@ operationally consequential and expected to remain understandable years later.
 These are deliberate defaults, not placeholders:
 
 - Target platform: Ubuntu 26.04 LTS, x86_64 ONLY. `--target wsl` is Ubuntu in WSL2
-  with systemd on; `--target linux` is bare metal or a VM, headless. Any other
+  (systemd there is configured by setup-dev-win in its milestone 2, not by this
+  repository, which neither sets nor checks it); `--target linux` is bare metal or a
+  VM, headless. Any other
   distro, release or architecture fails closed before anything changes. Detect WSL;
   never assume it. There are no arm64 branches (ADR-002).
 - Release fallback: if a vendor repo needed by a default or `gpu-nvidia` profile
@@ -23,13 +25,15 @@ These are deliberate defaults, not placeholders:
   different Ubuntu releases are never mixed (ADR-002).
 - Never write a capability claim that is true of only one target. Detect it rather
   than remember it, and report accordingly.
-- Package layers (ADR-003): apt for the base and for vendor repos, Homebrew on Linux
-  for CLI tools, mise for language runtimes, uv for Python.
+- Package layers (ADR-003): apt for the base (and, in a later milestone, vendor
+  repos), Homebrew on Linux for CLI tools, mise for language runtimes, uv for Python.
+  The profile list always includes `core`, which provides chezmoi, mise and uv.
 - Homebrew is installed by `git clone` at a pinned tag and commit, with no install
   script (ADR-004).
 - Configuration engine: chezmoi (`.chezmoiroot` points at `chezmoi/`).
-- Commit signing is SSH, with a per-machine `~/.ssh/id_ed25519` that is never
-  copied. The work identity splits through `includeIf gitdir:`. `core.autocrlf` is
+- Commit signing defaults to SSH, with a per-machine `~/.ssh/id_ed25519` that is
+  never copied; gpg and none stay selectable, and `script/identity` checks whichever
+  was recorded. The work identity splits through `includeIf gitdir:`. `core.autocrlf` is
   false (ADR-005).
 - Default interactive shell: zsh. fish is the mutually exclusive alternative. The
   login shell is reported, never changed (ADR-007).
@@ -56,10 +60,11 @@ host capability. Do not install a daemon natively merely because a package exist
 ## Sources of truth
 
 - `profiles/*.Brewfile`: Homebrew-on-Linux profiles (formulae only).
-- `apt/`: base package lists, vendor repo `.sources`, committed keys and
-  `pins.lock`.
+- `apt/`: the base package list (`base.list`). Vendor repo `.sources`, committed
+  keys and `pins.lock` are future work (a later milestone) and do not exist yet.
+- `homebrew/brew.lock`: the pinned Homebrew tag and commit (ADR-004).
 - `chezmoi/`: user configuration and idempotent apply hooks.
-- `mcp/`: the approved MCP policy catalogue.
+- `mcp/`: the approved MCP policy catalogue. Future work; it does not exist yet.
 - `script/`: orchestration, validation and maintenance commands.
 - `docs/ARCHITECTURE.md`: current boundaries and configuration flow.
 - `docs/DECISIONS.md`: durable architectural decisions (ADR log).
@@ -81,8 +86,8 @@ While editing:
 
 - Prefer a small focused patch over a broad rewrite.
 - Preserve idempotency.
-- Keep implementation logic in small scripts; keep `justfile` recipes as thin
-  command aliases.
+- Keep implementation logic in small scripts. There is no `justfile` yet; if one is
+  added, its recipes stay thin command aliases.
 - Explain each package's purpose and why its execution boundary is correct.
 - Keep mutually exclusive alternatives in separate profile fragments.
 - One tool per job in the default profile, capped at 70 entries (ADR-008).
@@ -90,7 +95,9 @@ While editing:
   absolute paths in tracked files.
 - Never run the bootstrap as root; use `sudo` per command.
 - No download-and-run scripts, including in CI. The Homebrew bootstrap is a pinned
-  clone, not an installer.
+  clone, not an installer. ADR-004 documents the one fallback: if the pinned clone
+  ever proves unsupported, Homebrew's official installer is downloaded, reviewed
+  against a pinned hash, then run, as the single remote-script exception.
 - Every GitHub Action is pinned to a 40-hex commit SHA and every CI tool to an
   exact version.
 - The repository never commits, tags, pushes, changes the login shell (`chsh`) or

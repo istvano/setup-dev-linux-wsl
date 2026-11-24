@@ -22,9 +22,9 @@ enabled = false
 # webhooks and Stripe live/test keys. Anything else — a bearer token, a database
 # URL with a password, a --token= flag — is recorded verbatim.
 #
-# SECURITY.md requires secrets to be passed through prompts, environment files or
-# a secret manager rather than on the command line. The filters below are the
-# compensating control for when one slips through anyway.
+# Secrets belong in prompts, environment files or a secret manager, never on the
+# command line. The filters below are the compensating control for when one slips
+# through anyway.
 #
 # They stay commented because enabling a regex silently drops matching commands
 # from history, which is only safe once the pattern is chosen deliberately. Both

@@ -13,8 +13,9 @@ Ported from setup-dev-mac, minus its Mac-specific keychain, agent socket and Col
 Include ~/.ssh/config.d/*
 
 Host *
-  # Keys are added to the agent on first use. There is no keychain integration on
-  # Linux; a passphrase is asked once per agent session.
+  # Keys are added to an agent on first use, when one is running. There is no
+  # keychain integration on Linux, and neither WSL nor a headless login starts an
+  # agent by default; docs/OPERATIONS.md says how to run one.
   AddKeysToAgent yes
 
   # Only offer the key configured for a host. Without this, ssh walks every key

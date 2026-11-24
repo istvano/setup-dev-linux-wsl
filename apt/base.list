@@ -7,7 +7,7 @@ file             # file-type detection, required by the Homebrew installer
 git              # Homebrew is installed by git clone; also the dev baseline
 ca-certificates  # TLS trust store for curl and apt over HTTPS
 gnupg            # apt key handling for vendor repos (not used for signing)
-socat            # relay used to bridge the Windows ssh-agent into WSL
+socat            # relay for the WSL-to-Windows LM Studio bridge (spec 8.2, local-llm profile, a later milestone)
 uidmap           # newuidmap/newgidmap for rootless container tooling
 unzip            # archive extraction for tool downloads
 zsh              # default interactive shell

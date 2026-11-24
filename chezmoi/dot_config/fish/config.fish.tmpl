@@ -46,14 +46,14 @@ end
 # PATH for `kubectl-*`. Without this, krew reports a successful install and the plugin still
 # cannot be run — which is the state the default profile shipped in.
 #
-# -a appends, so a plugin never shadows a declared Homebrew binary of the same name.
+# APPENDED, so a plugin never shadows a declared Homebrew binary of the same name.
 #
-# This depends on the directory existing, because fish_add_path silently skips a missing one —
-# the same coupling documented for ~/.local/bin above. run_onchange_after_28 creates it with
-# `mkdir -p` before installing anything, so this does not depend on a plugin install having
-# succeeded. zsh needs no such guarantee because it exports PATH unconditionally; the two
-# shells differ here on purpose.
-fish_add_path -ga $HOME/.krew/bin
+# Not fish_add_path: it silently skips a directory that does not exist (see ~/.local/bin
+# above), and nothing creates ~/.krew/bin before krew installs its first plugin, so the
+# entry would be missing in every shell started before that. Appended unconditionally
+# instead, exactly as .zshrc does, so a plugin installed in this session is runnable
+# without a new shell. `contains` keeps it idempotent.
+contains -- $HOME/.krew/bin $PATH; or set -gxa PATH $HOME/.krew/bin
 {{- end }}
 
 # Rust comes from mise, which shims cargo and rustc; no Homebrew keg on PATH.
@@ -88,12 +88,12 @@ set -gx VISUAL $EDITOR
 # value of the variable flags to '-l'".
 set -gx LESS -R
 
-# --- Telemetry opt-out (ADR-046) ---------------------------------------------
+# --- Telemetry opt-out (ADR-006) ---------------------------------------------
 #
 # The same four variables as dot_zshrc.tmpl, and they must stay the same four:
 # tests/placement-policy.sh compares the two shells, because an opt-out that
 # depends on which shell you opened is not an opt-out. The reasoning for each one
-# is in dot_zshrc.tmpl and ADR-046; only variables whose effect was verified
+# is in dot_zshrc.tmpl and ADR-006; only variables whose effect was verified
 # against upstream documentation or source are here.
 set -gx HOMEBREW_NO_ANALYTICS 1
 set -gx AZURE_CORE_COLLECT_TELEMETRY false

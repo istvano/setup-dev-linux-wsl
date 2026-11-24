@@ -1,14 +1,17 @@
 # setup-dev-linux-wsl
 
 A reproducible, security-minded Ubuntu 26.04 LTS x86_64 development environment,
-for WSL2 or plain Linux. It layers apt, vendor apt repos, Homebrew on Linux and
-mise, then applies dotfiles with chezmoi. It is the Linux counterpart of the
+for WSL2 or plain Linux. It layers apt, Homebrew on Linux and mise, then applies
+dotfiles with chezmoi. Vendor apt repositories (Docker, NVIDIA, Anthropic) arrive in
+a later milestone. It is the Linux counterpart of the
 operator's macOS setup repository and shares its shell conventions and security
 invariants.
 
 ## Targets
 
-- `--target wsl`: Ubuntu 26.04 LTS in WSL2, systemd on.
+- `--target wsl`: Ubuntu 26.04 LTS in WSL2. systemd in the distro is configured by
+  the Windows repository, setup-dev-win (its milestone 2); this repository neither
+  configures nor checks it.
 - `--target linux`: Ubuntu 26.04 LTS on bare metal or a VM, headless.
 
 Any other distro, release or architecture is refused before anything changes.
@@ -23,8 +26,8 @@ Any other distro, release or architecture is refused before anything changes.
 ```
 
 Options: `--target wsl|linux`, `--profiles CSV`, `--shell zsh|fish`,
-`--non-interactive` (needs `--git-name NAME --git-email EMAIL`). Run it as your
-normal user, never as root. Existing files that chezmoi would change are copied to
+`--non-interactive` (needs `--git-name NAME --git-email EMAIL`). The profile list
+must include `core`. Run it as your normal user, never as root. Existing files that chezmoi would change are copied to
 `<file>.backup.<UTC timestamp>` first.
 
 ## Profiles

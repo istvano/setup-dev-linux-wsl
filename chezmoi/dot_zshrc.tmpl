@@ -157,12 +157,13 @@ command -v bat >/dev/null 2>&1 && alias cat='bat --paging=never'
 export GPG_TTY="$TTY"
 export LESS='-R'
 
-# --- Telemetry opt-out (ADR-046) ---------------------------------------------
+# --- Telemetry opt-out (ADR-006) ---------------------------------------------
 #
 # Only variables whose effect was VERIFIED against the tool's own documentation
 # or source. A plausible-looking variable that nothing reads is worse than none:
-# it reads as coverage and provides none. What could not be verified is listed in
-# ADR-046 as unverified rather than set here on the chance that it works.
+# it reads as coverage and provides none. What could not be verified is left out
+# rather than set here on the chance that it works (setup-dev-mac's ADR-046, which
+# ADR-006 carries over, records what was checked).
 #
 # Kept in step with dot_config/fish/config.fish.tmpl; tests/placement-policy.sh
 # asserts both shells carry the same set, because a telemetry opt-out that
@@ -173,12 +174,12 @@ export LESS='-R'
 # install and update, and it reports what is installed.
 export HOMEBREW_NO_ANALYTICS=1
 # Azure CLI defaults to collecting: `collect_telemetry` reads with fallback=True
-# in azure/cli/core/telemetry.py. Set even though cloud-azure is opt-in, because
-# the variable costs nothing on a machine that never installs it.
+# in azure/cli/core/telemetry.py. Set although no profile here installs it, because
+# the variable costs nothing on a machine that never does.
 export AZURE_CORE_COLLECT_TELEMETRY=false
-# HashiCorp's checkpoint service, which the cloud profile's OpenTofu and
-# Terragrunt inherit from their Terraform lineage. It checks for new versions and
-# reports the current one on run.
+# HashiCorp's checkpoint service, which HashiCorp tools use to check for new versions
+# and report the current one on run. No profile here installs one yet; a project that
+# brings its own is covered without an edit.
 export CHECKPOINT_DISABLE=1
 # consoledonottrack.com: an informal cross-tool convention, not a standard, and
 # honoured only by tools that chose to. It is set as a blanket signal for

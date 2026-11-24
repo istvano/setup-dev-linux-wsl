@@ -140,7 +140,7 @@ chsh_code="$(code_lines "$LOGIN_HOOK" | grep -E '^[[:space:]]*(sudo[[:space:]]+)
   exit 1
 }
 
-# Telemetry opt-out (ADR-046) must be identical in both shells, compared as
+# Telemetry opt-out (ADR-006) must be identical in both shells, compared as
 # normalised sets: `export X=1` and `set -gx X 1` both become `X=1`. Rendered, so
 # the assertion covers what lands in $HOME. The empty-set guard keeps the
 # comparison from passing trivially once both files lose the block.
@@ -191,6 +191,14 @@ init_order "$fish_rendered" 'fzf --fish' 'atuin init fish --disable-ai' config.f
 # fish_add_path ignores a missing directory, and ~/.local/bin exists only because
 # chezmoi creates it for dot_local/bin.
 assert_match '^fish_add_path -g [$]HOME/[.]local/bin$' "$FISHRC"
+# M21: ~/.krew/bin does not exist until krew's first plugin install, so fish must not
+# use fish_add_path for it (skipped when missing); it appends unconditionally like zsh.
+refute_match 'fish_add_path.*krew' "$FISHRC"
+# shellcheck disable=SC2016  # fish's own $HOME and $PATH, matched literally
+grep -qxF 'contains -- $HOME/.krew/bin $PATH; or set -gxa PATH $HOME/.krew/bin' <<<"$fish_rendered" || {
+  echo 'config.fish (kubernetes profile) does not append ~/.krew/bin unconditionally.' >&2
+  exit 1
+}
 compgen -G "$ROOT/chezmoi/dot_local/bin/*" >/dev/null
 
 # Both shells export the ripgrep config path (rg reads no default location) and

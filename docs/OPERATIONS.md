@@ -19,8 +19,20 @@ On Ubuntu 26.04 x86_64, as a normal user with sudo:
 ```bash
 git clone <this repository> ~/setup-dev-linux-wsl && cd ~/setup-dev-linux-wsl
 ./bootstrap plan --target linux      # read it; nothing is changed
-./bootstrap apply --target linux     # chezmoi asks for your git name and email
+./bootstrap apply --target linux     # chezmoi asks the questions listed below
 ```
+
+On a first interactive run chezmoi asks, in this order: `Git user.name` and
+`Git user.email` (skipped when `--git-name` / `--git-email` are given), the commit
+signing method (`ssh`, `gpg` or `none`; default `ssh`), the signing key (default
+`~/.ssh/id_ed25519.pub`; a GPG key ID for `gpg`), the directory holding work
+repositories (default `~/work`) and the git email to use inside it (empty, the
+default, disables the work identity). Profiles and shell are not asked: bootstrap
+passes them from `--profiles` / `--shell` or their defaults. The answers are recorded
+in `~/.config/chezmoi/chezmoi.toml` and never asked again.
+
+The profile list must include `core` (it provides chezmoi, mise and uv); bootstrap
+refuses a list without it before any step.
 
 `apply` runs, in order: apt base packages, Homebrew (a pinned clone, never a
 downloaded script), the profile packages, chezmoi, then `script/verify`. Enrol the
@@ -38,14 +50,20 @@ answer chezmoi's prompts:
 ```
 
 `--non-interactive` requires both identity flags and uses chezmoi's defaults for the
-rest. Values must not contain `,` or `=` (chezmoi's prompt flags cannot carry them);
-bootstrap refuses them. Keep checkouts in the Linux filesystem: `script/verify`
+rest. Values must not contain `,`, `=` or `"` (chezmoi's prompt flags cannot carry
+them); bootstrap refuses them. A name that needs one of them can be entered at the
+interactive prompt instead, or edited into `[data] gitName` afterwards: re-runs never
+pass the recorded name back through those flags. Keep checkouts in the Linux filesystem: `script/verify`
 fails if it finds git repositories under `/mnt`.
 
 ## Re-running safely
 
-`./bootstrap apply` is idempotent: apt and Homebrew skip what is installed, and
-nothing is ever uninstalled. Before chezmoi writes, every existing file it would
+`./bootstrap apply` is safe to re-run and converges on the same state, but it is not
+a no-op, and it never uninstalls anything. Every apply runs `sudo apt-get update` and
+installs the base list, which also upgrades a listed package that has a newer
+candidate; runs `brew update`, which moves Homebrew itself forward (see ADR-004); and
+runs `brew bundle install`, which installs missing formulae and, by default, upgrades
+outdated ones. mise installs only runtimes that are missing. Before chezmoi writes, every existing file it would
 change is copied to `<file>.backup.<UTC timestamp>`; brand-new files need no backup.
 If `~/.config/chezmoi/chezmoi.toml` points at a different source directory it is
 backed up too, before `chezmoi init` rewrites it.
@@ -69,6 +87,11 @@ clear message if chezmoi is not initialised. It reports each check and exits 1 i
 any failed. Its chezmoi check ignores scripts, because the SSH hooks run on every
 apply by design. The login-shell line is informational.
 
+If `mise install` fails during apply (a network error, an unavailable version), the
+runtimes hook exits non-zero, so the apply fails and chezmoi retries the hook on the
+next apply; the hooks after it wait for that run. `./script/verify` reports missing
+runtimes and names `mise install` as the remedy.
+
 Install, update and recovery procedures beyond this are added as they are built.
 
 ## Enrol this machine's SSH key
@@ -87,10 +110,13 @@ treats those as two separate enrolments, so the public key is added **twice**.
    GitHub's host keys for you.
 5. Switch existing checkouts from https to ssh:
    `git remote set-url origin git@github.com:<owner>/<repo>.git`
-6. Check the result: `./script/identity --check`. It verifies the key and its mode, and
-   proves signing by creating and verifying a commit in a throwaway repository. If GitHub
-   cannot be reached or the key is not yet enrolled it prints a reminder and carries on;
-   that step is informational.
+6. Check the result: `./script/identity --check`. It verifies the key and its mode, then
+   checks commit signing according to `[data] gitSigningMethod` in the chezmoi config:
+   for `ssh` it proves signing by creating and verifying a commit in a throwaway
+   repository; for `gpg` it asserts `gpg.format = openpgp` and says that gpg signing
+   itself is not exercised; for `none` the SSH key is all it requires. If GitHub
+   cannot be reached or the key is not yet enrolled it prints a reminder and carries
+   on; that step is informational.
 
 Commit signing uses `gpg.format = ssh` with `~/.config/git/allowed_signers`, which the
 hook `run_after_13_allowed-signers` writes locally from your public key. It is
@@ -98,8 +124,10 @@ not tracked. Both hooks run on every apply, so after replacing or deleting the k
 `chezmoi apply` regenerates the key if missing and rewrites the file when its content differs.
 
 The key has no passphrase, so at rest it is protected only by disk encryption. Add one
-with `ssh-keygen -p -f ~/.ssh/id_ed25519`; `AddKeysToAgent yes` means you are then asked
-once per agent session.
+with `ssh-keygen -p -f ~/.ssh/id_ed25519`. Neither WSL nor a headless login starts an
+ssh-agent by default, so without one you are asked for the passphrase on every use,
+including every signed commit. Start one in the shell (`eval "$(ssh-agent -s)"`) and
+`AddKeysToAgent yes` adds the key on first use, so you are asked once per agent.
 
 Per-host SSH settings go in `~/.ssh/config.d/`, which the managed config includes first.
 Nothing in there is managed or tracked.

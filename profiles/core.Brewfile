@@ -34,6 +34,6 @@ brew "git-lfs"   # Large-file storage, used by model repositories.
 brew "neovim"    # Terminal editor for SSH, recovery and other no-GUI sessions.
 # Version control and security baseline
 brew "gh"        # GitHub command-line client for repository workflows.
-brew "age"       # Small file-encryption CLI retained as part of the bootstrap trust set.
-brew "sops"      # Encrypts structured secret files with the age identity created at first apply.
+brew "age"       # Small file-encryption CLI. This repository creates no age identity.
+brew "sops"      # Encrypts structured secret files (age, PGP or cloud KMS keys you supply).
 brew "gitleaks"  # Fast native scanner for secrets in source and Git history.

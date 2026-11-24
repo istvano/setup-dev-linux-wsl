@@ -2,15 +2,17 @@
 experimental = true
 idiomatic_version_file_enable_tools = ["node", "python", "java", "go"]
 {{- if has "dev" .profiles }}
-# Runtimes are pinned to explicit minor versions rather than tracking a floating
-# alias (the newest release, or an LTS channel). A floating version means the
-# toolchain can change under a project without any edit. Bumping one is a
-# reviewed edit to this file. See ADR-003.
+# Runtimes are pinned to an explicit release line, a major (node 24) or a minor
+# (go 1.26), rather than a floating alias (the newest release, or an LTS channel).
+# mise installs the newest release within the line, so patch releases arrive
+# without an edit; moving to another line is a reviewed edit to this file. rust is
+# the exception: "stable" follows rustup's stable channel. See ADR-003.
 [tools]
 node = "24"
 # Go supports the two most recent majors and nothing older. 1.25 sat here until
 # 1.27 shipped, at which point it stopped receiving security fixes — silently,
-# because nothing checked it. script/update-report now does.
+# because nothing checked it. Nothing here checks it yet either: a currency report
+# (update-report) is an open task in TASKS.md.
 #
 # 1.26 rather than 1.27 is a choice, not a default: it is in support today and is
 # the smaller step from what projects were building against. It falls out of

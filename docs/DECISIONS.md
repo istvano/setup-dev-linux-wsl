@@ -56,6 +56,13 @@ into its prefix, which is Homebrew's documented alternative install. No
 unsupported, the fallback is the official installer downloaded, reviewed against a
 pinned hash, then run, documented as the single remote-script exception.
 
+What the pin does and does not anchor: it verifies the FIRST clone only (HEAD must
+equal the locked commit, or the clone is removed). `script/install-homebrew` then
+runs `brew update` on every apply, which moves Homebrew forward to whatever upstream
+publishes, and a later run accepts any HEAD that descends from the locked commit.
+From then on Homebrew's own update channel is trusted, as it is on every Homebrew
+installation; the pin is a reviewed starting point, not a freeze.
+
 ## ADR-005: SSH commit signing with per-machine keys
 
 Status: accepted. Spec section 7.5.

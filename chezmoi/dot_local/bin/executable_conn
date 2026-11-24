@@ -8,6 +8,9 @@
 # -n prints the command instead of running it.
 #
 # Provenance: copied verbatim from setup-dev-mac/chezmoi/dot_local/bin/executable_conn.
+# NOTE (Linux): the paragraph below is the Mac's text, kept verbatim by mandate. Here
+# there is no bash 3.2 and no ADR-031: zsh comes from apt/base.list on every target and
+# /bin/zsh resolves through Ubuntu's merged /usr, so the shebang holds either way.
 #
 # Managed by chezmoi from chezmoi/dot_local/bin/executable_conn; edit it there.
 # zsh rather than the repository's bash 3.2 on purpose: the scp prompts prefill the
