@@ -1,0 +1,77 @@
+#!/usr/bin/env bash
+# Install Homebrew on Linux from a pinned git clone, not from the download-and-run
+# installer. The tag and commit in homebrew/brew.lock are the trust anchor: the clone
+# is refused unless HEAD is exactly the locked commit. Internal script; the OS, arch
+# and target guards live in bootstrap.
+#
+# Usage: script/install-homebrew [--check]
+set -Eeuo pipefail
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+# shellcheck source=script/lib/common.sh
+source "$ROOT/script/lib/common.sh"
+
+export HOMEBREW_NO_ANALYTICS=1 HOMEBREW_NO_ENV_HINTS=1
+
+LOCK="$ROOT/homebrew/brew.lock"
+REPO_URL="https://github.com/Homebrew/brew"
+
+lock_value() {
+  local key="$1" value
+  value="$(sed -n "s/^${key}=//p" "$LOCK")"
+  [[ -n "$value" ]] || die "$LOCK has no $key."
+  printf '%s\n' "$value"
+}
+
+check() {
+  activate_homebrew || {
+    warn "Homebrew is not installed at $BREW_PREFIX."
+    return 1
+  }
+  local state
+  state="$(brew analytics state 2>&1 || true)"
+  [[ "$state" == *[Dd]isabled* ]] || {
+    warn "Homebrew analytics are not disabled: $state"
+    return 1
+  }
+  success "Homebrew present at $BREW_PREFIX, analytics disabled."
+}
+
+case "${1-}" in
+  --check)
+    check
+    exit
+    ;;
+  "") ;;
+  *) die "Usage: script/install-homebrew [--check]" ;;
+esac
+
+require_not_root
+
+tag="$(lock_value tag)"
+commit="$(lock_value commit)"
+repo="$BREW_PREFIX/Homebrew"
+
+if [[ -d "$repo/.git" ]]; then
+  # Homebrew updates itself, so HEAD may be later than the pin, but it must contain it.
+  head="$(git -C "$repo" rev-parse HEAD 2>/dev/null || true)"
+  if [[ "$head" != "$commit" ]] &&
+    ! git -C "$repo" merge-base --is-ancestor "$commit" HEAD 2>/dev/null; then
+    die "Homebrew at $BREW_PREFIX does not contain the locked commit; it may be a partial clone. Remove it with: sudo rm -rf $BREW_PREFIX and re-run."
+  fi
+  log "Homebrew already present at $BREW_PREFIX."
+else
+  sudo install -d -o "$USER" -g "$(id -gn)" "$BREW_PREFIX"
+  git clone --branch "$tag" "$REPO_URL" "$repo"
+  actual="$(git -C "$repo" rev-parse HEAD)"
+  if [[ "$actual" != "$commit" ]]; then
+    rm -rf "$repo"
+    die "Homebrew tag $tag resolved to $actual, expected $commit; clone removed."
+  fi
+  mkdir -p "$BREW_PREFIX/bin"
+  ln -sf ../Homebrew/bin/brew "$BREW_PREFIX/bin/brew"
+fi
+
+activate_homebrew || die "Homebrew is not executable at $BREW_PREFIX/bin/brew."
+brew analytics off
+brew update --quiet
+success "Homebrew ready."

@@ -154,3 +154,15 @@ repos_under_mnt() {
     find "$dir" -maxdepth 4 -type d -name .git 2>/dev/null || true
   done
 }
+
+# --- Homebrew on Linux -------------------------------------------------------------
+# The default prefix is the one Homebrew's bottles are built for. Overridable so tests
+# can point at a temporary directory.
+BREW_PREFIX="${BREW_PREFIX:-/home/linuxbrew/.linuxbrew}"
+
+# Put Homebrew on PATH for this process. Returns 1 when it is not installed.
+activate_homebrew() {
+  [[ -x "$BREW_PREFIX/bin/brew" ]] || return 1
+  # eval is vendor shell initialisation: `brew shellenv` prints export statements.
+  eval "$("$BREW_PREFIX/bin/brew" shellenv)"
+}
