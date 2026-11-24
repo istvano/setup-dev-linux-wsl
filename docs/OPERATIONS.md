@@ -9,6 +9,14 @@ Runbook for installing, verifying and recovering the environment.
 REQUIRE_LINTERS=1 ./script/test     # fails instead of skipping; what CI runs
 ```
 
+Before pushing, run the CI-pinned linters (shellcheck 0.9.0 and shfmt v3.13.1 differ
+from the host's):
+
+```bash
+docker run --rm -v "$PWD":/src -w /src ubuntu:24.04 bash -c 'apt-get update -qq && apt-get install -y -qq shellcheck >/dev/null && shellcheck --version && ./script/shell-files | xargs shellcheck -x'
+GOBIN="$PWD/.tools/bin" go install mvdan.cc/sh/v3/cmd/shfmt@v3.13.1 && ./script/shell-files | xargs .tools/bin/shfmt -d -i 2 -ci
+```
+
 Bash 5 or newer is required. Under an older bash the command stops with
 `bash 5 or newer is required`.
 

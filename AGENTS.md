@@ -122,6 +122,14 @@ REQUIRE_LINTERS=1 REQUIRE_CHEZMOI=1 ./script/test   # what CI runs; no silent sk
 
 ## Testing expectations
 
+Before pushing, run the CI-pinned linters (shellcheck 0.9.0 and shfmt v3.13.1 differ
+from the host's):
+
+```bash
+docker run --rm -v "$PWD":/src -w /src ubuntu:24.04 bash -c 'apt-get update -qq && apt-get install -y -qq shellcheck >/dev/null && shellcheck --version && ./script/shell-files | xargs shellcheck -x'
+GOBIN="$PWD/.tools/bin" go install mvdan.cc/sh/v3/cmd/shfmt@v3.13.1 && ./script/shell-files | xargs .tools/bin/shfmt -d -i 2 -ci
+```
+
 `./script/test` runs every test under `tests/` listed in its `TESTS` array. It
 requires bash 5 and refuses to run under anything older.
 

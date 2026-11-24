@@ -262,10 +262,10 @@ runtimes_hook "$TMP/mise-fail"
   exit 1
 }
 runtimes_hook "$TMP/mise-none"
-((rc != 0)) && [[ "$hook_out" == *"mise is not installed"* ]] || {
+if ! ((rc != 0)) || [[ "$hook_out" != *"mise is not installed"* ]]; then
   printf 'runtimes hook must fail, naming mise, when mise is missing (rc %s):\n%s\n' "$rc" "$hook_out" >&2
   exit 1
-}
+fi
 
 # --- .chezmoiignore keeps repository documents out of $HOME.
 for fixture in "${FIXTURES[@]}"; do

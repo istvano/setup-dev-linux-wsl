@@ -31,6 +31,11 @@ phasing (section 9).
 
 ## Milestone 1 follow-ups
 
+- [ ] Align host and CI linter versions. shfmt is pinned v3.13.1 in CI but floats with
+      Homebrew on the host; shellcheck is apt 0.9.0 in CI against 0.11.0 on the host
+      (SC2015 passed locally and failed in CI). Options: pin shellcheck in CI from its
+      release with a sha256, as chezmoi is pinned, and/or pin the host's linters via mise.
+
 Security and correctness:
 
 - [ ] Pin codex's SHA-256: the aqua registry entry declares no checksum, so the
