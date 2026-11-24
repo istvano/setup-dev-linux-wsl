@@ -21,6 +21,23 @@ distro or release fails closed before changes. If a vendor repo needed by a defa
 `gpu-nvidia` profile has no 26.04 packages, the whole repo targets 24.04 LTS for v1.
 Repos from different Ubuntu releases are never mixed.
 
+Release check, 2026-11-24 (HTTP 200 for every URL; all four vendors support 26.04, so the
+repo stays on 26.04):
+
+- Docker: `https://download.docker.com/linux/ubuntu/dists/resolute/Release` (Suite
+  `resolute`, amd64 listed) and `.../resolute/stable/binary-amd64/Packages` (`docker-ce`
+  present).
+- NVIDIA CUDA: `https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2604/x86_64/`
+  and its `Release` (dated 2026-11-18) and `Packages`.
+- NVIDIA Container Toolkit: `https://nvidia.github.io/libnvidia-container/stable/deb/amd64/Packages`
+  and `.../stable/deb/nvidia-container-toolkit.list`. This repo is one release-agnostic
+  flat repo (`deb ... $(ARCH) /`), so it has no 26.04 suite to be missing.
+- Anthropic Claude Code: documented at https://code.claude.com/docs/en/setup as
+  `deb [signed-by=/etc/apt/keyrings/claude-code.asc] https://downloads.claude.ai/claude-code/apt/stable stable main`.
+  `https://downloads.claude.ai/claude-code/apt/stable/dists/stable/Release` and
+  `.../main/binary-amd64/Packages` return 200. The suite is `stable`, not an Ubuntu
+  codename, so it is distro-agnostic and has no 26.04 gap.
+
 ## ADR-003: apt base, vendor apt, Homebrew CLI, mise runtimes
 
 Status: accepted. Spec section 3.

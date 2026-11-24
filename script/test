@@ -13,6 +13,7 @@ TESTS=(
   placement-policy
   platform
   profiles
+  apt
   render-brewfile
 )
 
