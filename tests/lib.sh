@@ -50,3 +50,37 @@ refute_command() {
     exit 1
   fi
 }
+
+# render FIXTURE TEMPLATE_PATH
+#
+# Prints the rendered text of one chezmoi template under a fixture's data.
+# FIXTURE is a file name under tests/fixtures/chezmoi/ (or a path); TEMPLATE_PATH
+# is absolute or relative to <repo>/chezmoi. A template error fails loudly.
+# .chezmoi.toml.tmpl is run with --init, since it uses the prompt*Once functions;
+# the fixture's data satisfies them, so nothing prompts. execute-template has no
+# --promptDefaults (that is `chezmoi init` only); there, a prompt with no data and
+# no simulated answer simply yields its default, and --promptString is keyed by
+# the PROMPT TEXT, not the data key.
+: "${ROOT:="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"}"
+render() {
+  local fixture="$1" template="$2" config init=() err
+  [[ "$fixture" == /* || "$fixture" == */* ]] && config="$fixture" ||
+    config="$ROOT/tests/fixtures/chezmoi/$fixture"
+  [[ "$template" == /* ]] || template="$ROOT/chezmoi/$template"
+  [[ -f "$config" && -f "$template" ]] || {
+    printf 'render: missing fixture or template: %s %s\n' "$config" "$template" >&2
+    exit 1
+  }
+  if [[ "$(basename "$template")" == .chezmoi.toml.tmpl ]]; then
+    init=(--init --promptString 'Git user.name=Test,Git user.email=test@example.invalid')
+  fi
+  err="$(mktemp)"
+  if ! chezmoi execute-template --config "$config" --source "$ROOT/chezmoi" \
+    "${init[@]+"${init[@]}"}" <"$template" 2>"$err"; then
+    printf 'render: template error in %s (fixture %s):\n' "$template" "$config" >&2
+    cat "$err" >&2
+    rm -f "$err"
+    exit 1
+  fi
+  rm -f "$err"
+}

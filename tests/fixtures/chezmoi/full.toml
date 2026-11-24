@@ -1,0 +1,14 @@
+# Fixture for tests/chezmoi-templates.sh. `target` is detected by
+# chezmoi/.chezmoi.toml.tmpl in real use; fixtures set it directly.
+[data]
+gitName = "Test User"
+gitEmail = "test@example.invalid"
+gitSigningMethod = "ssh"
+gitSigningKey = "~/.ssh/id_ed25519.pub"
+workGitDir = "~/work"
+workGitEmail = "work@example.invalid"
+profiles = ["core", "dev", "security", "kubernetes", "backup", "productivity-extra"]
+shell = "fish"
+target = "linux"
+ephemeral = false
+machineName = "test-host"

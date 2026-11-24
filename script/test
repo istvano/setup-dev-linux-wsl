@@ -16,6 +16,7 @@ TESTS=(
   apt
   render-brewfile
   homebrew
+  chezmoi-templates
 )
 
 for test in "${TESTS[@]}"; do

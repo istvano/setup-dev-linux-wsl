@@ -1,0 +1,47 @@
+{{- $gitName := promptStringOnce . "gitName" "Git user.name" -}}
+{{- $gitEmail := promptStringOnce . "gitEmail" "Git user.email" -}}
+{{- $gitSigningMethod := promptChoiceOnce . "gitSigningMethod" "Commit signing method" (list "ssh" "gpg" "none") "ssh" -}}
+{{- $gitSigningKey := promptStringOnce . "gitSigningKey" "Signing key: SSH public key path for ssh, GPG key ID for gpg" "~/.ssh/id_ed25519.pub" -}}
+{{- $workGitDir := promptStringOnce . "workGitDir" "Directory holding work repositories" "~/work" -}}
+{{- $workGitEmail := promptStringOnce . "workGitEmail" "Git user.email inside that directory (empty to disable the split)" "" -}}
+{{- /* Keep this list identical to VALID_PROFILES in script/lib/profiles.sh, and the
+       default identical to DEFAULT_PROFILES; tests/profiles.sh compares them. */ -}}
+{{- $profileChoices := list "core" "dev" "security" "kubernetes" "backup" "productivity-extra" -}}
+{{- $profiles := promptMultichoiceOnce . "profiles" "Workstation profiles" $profileChoices (list "core" "dev" "security" "kubernetes" "backup") -}}
+{{- $shell := promptChoiceOnce . "shell" "Interactive shell (never changes the account login shell)" (list "zsh" "fish") "zsh" -}}
+{{- /* target is detected, never asked. WSL2 kernels report "...microsoft-standard-WSL2"
+       in /proc/sys/kernel/osrelease. The hasKey guards matter: on a host without
+       .chezmoi.kernel (macOS, where the tests also run) a bare lookup is a template
+       error. Absent means plain linux. */ -}}
+{{- $target := "linux" -}}
+{{- if hasKey .chezmoi "kernel" -}}
+{{-   if hasKey .chezmoi.kernel "osrelease" -}}
+{{-     if contains "microsoft" (.chezmoi.kernel.osrelease | lower) -}}
+{{-       $target = "wsl" -}}
+{{-     end -}}
+{{-   end -}}
+{{- end -}}
+{{- /* ephemeral is detected: a container, CI runner or Codespace gets a reduced
+       environment without a second code path. */ -}}
+{{- $ephemeral := or (env "CI" | not | not) (env "CODESPACES" | not | not) -}}
+{{- /* .chezmoiroot resolves the source directory to <repo>/chezmoi. Record the
+       repository root so this file agrees with what ./bootstrap writes. */ -}}
+sourceDir = {{ dir .chezmoi.sourceDir | quote }}
+[git]
+autoCommit = false
+autoPush = false
+[diff]
+# pager only, NOT command: diff.command runs delta per file and opens a pager each time.
+pager = "delta"
+[data]
+gitName = {{ $gitName | quote }}
+gitEmail = {{ $gitEmail | quote }}
+gitSigningMethod = {{ $gitSigningMethod | quote }}
+gitSigningKey = {{ $gitSigningKey | quote }}
+workGitDir = {{ $workGitDir | quote }}
+workGitEmail = {{ $workGitEmail | quote }}
+profiles = {{ $profiles | toToml }}
+shell = {{ $shell | quote }}
+target = {{ $target | quote }}
+machineName = {{ .chezmoi.hostname | quote }}
+ephemeral = {{ $ephemeral }}
