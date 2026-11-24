@@ -134,6 +134,35 @@ grep -qF 'includeIf "gitdir:' <<<"$git_work" || {
   echo '.gitconfig lacks includeIf when workGitEmail is set.' >&2
   exit 1
 }
+# F6: the includeIf ends in exactly one slash whether or not workGitDir has one. A
+# rendered `gitdir:~/work//` never matches, so the work identity silently turns off.
+grep -qxF '[includeIf "gitdir:~/work/"]' <<<"$git_work" || {
+  printf '.gitconfig includeIf is not exactly gitdir:~/work/:\n%s\n' "$(grep includeIf <<<"$git_work")" >&2
+  exit 1
+}
+sed 's|^workGitDir = .*|workGitDir = "~/work/"|' "$ROOT/tests/fixtures/chezmoi/full.toml" >"$TMP/work-slash.toml"
+git_slash="$(render "$TMP/work-slash.toml" "$ROOT/chezmoi/dot_gitconfig.tmpl")"
+grep -qxF '[includeIf "gitdir:~/work/"]' <<<"$git_slash" || {
+  printf 'workGitDir with a trailing slash renders a broken includeIf:\n%s\n' "$(grep includeIf <<<"$git_slash")" >&2
+  exit 1
+}
+# F5 (R21): VS Code difftool/mergetool use bare `code`, never a lookPath absolute path:
+# on WSL that resolves to /mnt/c/... with spaces, which git's sh splits. The section is
+# decided by the detected target, so rendering never depends on the caller's PATH.
+refute_match 'lookPath "code"' "$ROOT/chezmoi/dot_gitconfig.tmpl"
+git_wsl="$(render wsl.toml "$ROOT/chezmoi/dot_gitconfig.tmpl")"
+# shellcheck disable=SC2016  # $LOCAL etc. are git's placeholders, matched literally
+for expect in '  cmd = code --wait --diff $LOCAL $REMOTE' \
+  '  cmd = code --wait --merge $LOCAL $REMOTE $BASE $MERGED'; do
+  grep -qxF -- "$expect" <<<"$git_wsl" || {
+    printf '.gitconfig (wsl) lacks: %s\n' "$expect" >&2
+    exit 1
+  }
+done
+! grep -q 'tool = vscode' <<<"$git_ssh" || {
+  echo '.gitconfig (headless linux) configures the VS Code difftool.' >&2
+  exit 1
+}
 grep -qF 'work@example.invalid' <<<"$(render full.toml "$ROOT/chezmoi/dot_config/git/config-work.tmpl")" || {
   echo 'config-work lacks the work email.' >&2
   exit 1

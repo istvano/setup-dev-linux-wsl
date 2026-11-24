@@ -134,6 +134,8 @@ conflict() {
   die "$flag '$given' conflicts with '$recorded' recorded in $CHEZMOI_CONFIG. chezmoi keeps the recorded value, so packages and dotfiles would disagree. Edit [data] $key in that file (or remove the file to start over), then re-run."
 }
 sorted_csv() { printf '%s\n' "$1" | tr ',' '\n' | sort | paste -sd, -; }
+# 1 once the values below came from an existing chezmoi config.
+recorded=0
 reconcile_with_chezmoi_data() {
   local recorded_profiles recorded_shell recorded_name recorded_email
   [[ -f "$CHEZMOI_CONFIG" ]] || return 0
@@ -167,6 +169,7 @@ reconcile_with_chezmoi_data() {
     git_email="$recorded_email"
   fi
   validate_profiles "$profiles"
+  recorded=1
   log "Using the profiles, shell and identity recorded in $CHEZMOI_CONFIG."
 }
 reconcile_with_chezmoi_data
@@ -195,23 +198,32 @@ run_step() {
   fi
 }
 
-# Flags that make chezmoi's data match what script/packages installed. Profiles and
-# shell are always passed (the defaults when not chosen); git identity is passed when
-# given, otherwise chezmoi prompts for it (interactive only; guarded above).
+# Flags that make chezmoi's data match what script/packages installed. On a first run
+# profiles and shell are always passed (the defaults when not chosen); git identity is
+# passed when given, otherwise chezmoi prompts for it (interactive only; guarded above).
+#
+# On a re-run (an existing config) no recorded value is passed at all. prompt*Once
+# returns the record without consulting any flag, and reconcile_with_chezmoi_data has
+# already refused every disagreement, so the flags would add nothing. They would only
+# add risk: --promptString is a comma-separated key=value list that pflag parses as
+# CSV, so a name an interactive first run accepted, such as `Doe, Jane` or one with
+# a '"', would make every later `chezmoi init` fail.
 chezmoi_prompt_flags() {
-  local joined="${profiles//,//}"
-  CHEZMOI_PROMPTS=(
-    --promptMultichoice "$PROMPT_PROFILES=$joined"
-    --promptChoice "$PROMPT_SHELL=$shell_choice"
-  )
-  local strings=()
-  [[ -n "$git_name" ]] && strings+=("$PROMPT_GIT_NAME=$git_name")
-  [[ -n "$git_email" ]] && strings+=("$PROMPT_GIT_EMAIL=$git_email")
-  if ((${#strings[@]} > 0)); then
-    CHEZMOI_PROMPTS+=(--promptString "$(
-      IFS=,
-      printf '%s' "${strings[*]}"
-    )")
+  CHEZMOI_PROMPTS=()
+  if ((! recorded)); then
+    CHEZMOI_PROMPTS+=(
+      --promptMultichoice "$PROMPT_PROFILES=${profiles//,//}"
+      --promptChoice "$PROMPT_SHELL=$shell_choice"
+    )
+    local strings=()
+    [[ -n "$git_name" ]] && strings+=("$PROMPT_GIT_NAME=$git_name")
+    [[ -n "$git_email" ]] && strings+=("$PROMPT_GIT_EMAIL=$git_email")
+    if ((${#strings[@]} > 0)); then
+      CHEZMOI_PROMPTS+=(--promptString "$(
+        IFS=,
+        printf '%s' "${strings[*]}"
+      )")
+    fi
   fi
   if ((non_interactive)); then
     CHEZMOI_PROMPTS+=(--promptDefaults)
@@ -273,7 +285,7 @@ apply_chezmoi() {
   step "chezmoi init"
   backup_foreign_config
   chezmoi_prompt_flags
-  chezmoi init --source "$ROOT/chezmoi" "${CHEZMOI_PROMPTS[@]}"
+  chezmoi init --source "$ROOT/chezmoi" "${CHEZMOI_PROMPTS[@]+"${CHEZMOI_PROMPTS[@]}"}"
   step "chezmoi backup of changing targets"
   backup_changing_targets
   step "chezmoi apply"

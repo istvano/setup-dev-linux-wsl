@@ -40,32 +40,37 @@ credential helper, password-manager signing program and pinentry settings. */ -}
 [diff]
   algorithm = histogram
   colorMoved = default
-{{- if lookPath "code" }}
+{{- /* VS Code is configured on WSL only, decided by the detected target and never by
+       lookPath: rendering must not depend on the PATH of whoever runs chezmoi, or
+       `chezmoi verify` reports drift depending on the caller. --target linux is
+       headless, so there is no VS Code window for `code --wait` to open there. */}}
+{{- $vscode := eq .target "wsl" }}
+{{- if $vscode }}
   tool = vscode
 {{- end }}
 [merge]
   conflictstyle = zdiff3
-{{- if lookPath "code" }}
+{{- if $vscode }}
   tool = vscode
 {{- end }}
-{{- if lookPath "code" }}
+{{- if $vscode }}
 
 # VS Code for interactive diffs and three-way merges. It does not replace delta:
 # `git diff` goes through core.pager, while difftool and mergetool launch an external
-# tool on demand. Both need a graphical session; over plain SSH `code --wait` has
-# nothing to open and will hang, so use the terminal tools there. The absolute path
-# is deliberate: a GUI Git client does not inherit the shell PATH.
+# tool on demand. On WSL `code` is VS Code's WSL wrapper, found on PATH through
+# Windows interop. It is called by its bare name on purpose: its absolute path is
+# /mnt/c/... with spaces, which git hands to sh unquoted, so sh would split it.
 [difftool]
   prompt = false
 [difftool "vscode"]
-  cmd = {{ lookPath "code" | quote }} --wait --diff $LOCAL $REMOTE
+  cmd = code --wait --diff $LOCAL $REMOTE
 [mergetool]
   prompt = false
   # No .orig files left behind after a resolved conflict.
   keepBackup = false
 [mergetool "vscode"]
   # `code --merge` takes path1, path2, base, result.
-  cmd = {{ lookPath "code" | quote }} --wait --merge $LOCAL $REMOTE $BASE $MERGED
+  cmd = code --wait --merge $LOCAL $REMOTE $BASE $MERGED
 {{- end }}
 # Git LFS, declared here rather than left to `git lfs install`, which writes exactly
 # these keys into a file chezmoi owns. `required = true` makes a missing git-lfs binary
@@ -142,6 +147,7 @@ credential helper, password-manager signing program and pinentry settings. */ -}
 {{- if .workGitEmail }}
 
 # Work repositories use a separate identity. Keep them under this path.
-[includeIf {{ printf "gitdir:%s/" .workGitDir | quote }}]
+{{- /* Exactly one trailing slash: `gitdir:~/work//` never matches anything. */}}
+[includeIf {{ printf "gitdir:%s/" (trimSuffix "/" .workGitDir) | quote }}]
   path = {{ joinPath .chezmoi.homeDir ".config/git/config-work" | quote }}
 {{- end }}

@@ -8,7 +8,13 @@
 # "can this machine authenticate and sign?" that no package check can.
 #
 #   identity            the same as --check
-#   identity --check    key present and 0600, ssh signing configured and working
+#   identity --check    key present and 0600, and commit signing as recorded
+#
+# What "signing as recorded" means follows [data] gitSigningMethod in the chezmoi config
+# (.chezmoi.toml.tmpl offers ssh, gpg and none):
+#   ssh   gpg.format=ssh, and a commit signed and verified in a throwaway repository
+#   gpg   gpg.format=openpgp only; gpg signing itself is NOT exercised by this check
+#   none  nothing beyond the SSH key, which authenticates to the forge whatever the method
 #
 # Ported in spirit from setup-dev-mac/script/identity; the Mac's age-identity restore
 # is not part of this repository.
@@ -24,6 +30,8 @@ usage() {
 Usage: script/identity [--check]
 
   --check   report the state of this machine's ssh key and commit signing (default)
+
+The signing method is read from [data] gitSigningMethod in the chezmoi config.
 USAGE
 }
 
@@ -48,8 +56,9 @@ fail() {
   failures=$((failures + 1))
 }
 
-# A private key the group or others can read is refused by ssh outright.
-key_mode_is_600() { [[ "$(stat -c '%a' "$1" 2>/dev/null || echo '???')" == 600 ]]; }
+# A private key the group or others can read is refused by ssh outright. find's exact
+# -perm match is POSIX, so the check means the same wherever the tests run.
+key_mode_is_600() { [[ -n "$(find "$1" -maxdepth 0 -perm 0600 2>/dev/null)" ]]; }
 
 # Expand a leading ~/ the way git does for user.signingkey.
 expand_home() {
@@ -80,12 +89,27 @@ check_ssh_key() {
   fi
 }
 
+# OpenPGP signing needs a secret key and an agent this repository does not manage, so
+# only the configuration is asserted, and the report says signing was not exercised.
+check_gpg_signing() {
+  echo
+  echo '== commit signing (gpg) =='
+  local format
+  format="$(git config --get gpg.format 2>/dev/null || true)"
+  if [[ "$format" != openpgp ]]; then
+    fail "git config gpg.format is '${format:-unset}', expected openpgp."
+    return
+  fi
+  pass 'git config gpg.format is openpgp.'
+  warn 'gpg signing is not exercised by this check; prove it with a signed commit of your own.'
+}
+
 # Prove signing end to end in a throwaway repository: commit, then verify. -c overrides
 # make it work without a global gitconfig, but the key and the allowed_signers file are
 # the ones the user configured; nothing is invented.
-check_signing() {
+check_ssh_signing() {
   echo
-  echo '== commit signing =='
+  echo '== commit signing (ssh) =='
   local format key signers email repo
   format="$(git config --get gpg.format 2>/dev/null || true)"
   if [[ "$format" != ssh ]]; then
@@ -157,8 +181,24 @@ check_github() {
 REMINDER
 }
 
+# The method chezmoi recorded decides what "complete" means. Unreadable is a failure,
+# not a guess: an unknown signing state is ambiguous security state.
+activate_homebrew || true
+if ! method="$(chezmoi_data '.gitSigningMethod' 2>/dev/null)"; then
+  die "Cannot read [data] gitSigningMethod from $(chezmoi_config_path); run ./bootstrap apply first."
+fi
+
 check_ssh_key
-check_signing
+case "$method" in
+  ssh) check_ssh_signing ;;
+  gpg) check_gpg_signing ;;
+  none)
+    echo
+    echo '== commit signing =='
+    pass 'Commit signing is off (gitSigningMethod = none); only the SSH key is required.'
+    ;;
+  *) fail "Unknown gitSigningMethod '$method' in $(chezmoi_config_path); expected ssh, gpg or none." ;;
+esac
 check_github
 
 echo

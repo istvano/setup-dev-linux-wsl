@@ -109,6 +109,74 @@ if command -v chezmoi >/dev/null 2>&1; then
   conflict_case name gitName --git-name Other --git-email rec@example.invalid
   conflict_case email gitEmail --git-name Rec --git-email other@example.invalid
   rm -f "$out" "$out.stdout"
+
+  # --- F1: a re-run must not feed the recorded identity back through chezmoi's prompt
+  # flags. --promptString is a comma-separated key=value list, so a recorded name an
+  # interactive first run accepted (here with ', ' and '"') would make every later
+  # `chezmoi init` fail. A copy of bootstrap runs `apply` with every step but chezmoi
+  # stubbed out; the real chezmoi does the init, a wrapper logs its arguments and
+  # stubs status and apply, so nothing touches this machine.
+  # Under HOME_T, so the EXIT trap removes it even when an assertion fails.
+  rerun_tree="$(mktemp -d "$HOME_T/rerun.XXXXXX")"
+  real_chezmoi="$(command -v chezmoi)"
+  mkdir -p "$rerun_tree/script" "$rerun_tree/brew/bin" "$rerun_tree/home/.config/chezmoi"
+  cp "$B" "$rerun_tree/bootstrap"
+  cp -R "$ROOT/script/lib" "$rerun_tree/script/lib"
+  cp -R "$ROOT/chezmoi" "$rerun_tree/chezmoi"
+  for stub in apt-base install-homebrew packages verify; do
+    printf '#!/usr/bin/env bash\nexit 0\n' >"$rerun_tree/script/$stub"
+    chmod +x "$rerun_tree/script/$stub"
+  done
+  # activate_homebrew evals `brew shellenv`; this one only puts the wrapper first on PATH.
+  cat >"$rerun_tree/brew/bin/brew" <<EOF
+#!/usr/bin/env bash
+[[ "\${1:-}" == shellenv ]] && printf 'export PATH="%s:\$PATH"\n' "$rerun_tree/brew/bin"
+exit 0
+EOF
+  cat >"$rerun_tree/brew/bin/chezmoi" <<EOF
+#!/usr/bin/env bash
+printf '%s\n' "\$*" >>"$rerun_tree/chezmoi.log"
+case "\${1:-}" in
+  status | apply) exit 0 ;;
+esac
+exec "$real_chezmoi" "\$@"
+EOF
+  chmod +x "$rerun_tree/brew/bin/brew" "$rerun_tree/brew/bin/chezmoi"
+  cat >"$rerun_tree/home/.config/chezmoi/chezmoi.toml" <<EOF
+sourceDir = "$rerun_tree"
+[data]
+gitName = "Doe, Jane \"JD\""
+gitEmail = "jd@example.invalid"
+gitSigningMethod = "ssh"
+gitSigningKey = "~/.ssh/id_ed25519.pub"
+workGitDir = "~/work"
+workGitEmail = ""
+profiles = ["core"]
+shell = "zsh"
+EOF
+  if ! rerun_err="$(env -u WSL_DISTRO_NAME -u XDG_CONFIG_HOME HOME="$rerun_tree/home" \
+    BREW_PREFIX="$rerun_tree/brew" OS_RELEASE_FILE="$FX/os-release/ubuntu-26.04" UNAME_M=x86_64 \
+    KERNEL_OSRELEASE_FILE="$FX/osrelease/plain" "$rerun_tree/bootstrap" apply --non-interactive 2>&1)"; then
+    printf 'F1: re-run with a recorded name containing ", " and a quote failed:\n%s\n' "$rerun_err" >&2
+    exit 1
+  fi
+  init_line="$(grep '^init ' "$rerun_tree/chezmoi.log" || true)"
+  [[ -n "$init_line" ]] || {
+    echo 'F1: the re-run never called chezmoi init' >&2
+    exit 1
+  }
+  [[ "$init_line" != *Doe* && "$init_line" != *jd@example* && "$init_line" != *promptString* ]] || {
+    printf 'F1: chezmoi init was given recorded identity values: %s\n' "$init_line" >&2
+    exit 1
+  }
+  # chezmoi's prompt*Once kept the record: the name survived the re-init unchanged.
+  grep -qxF 'gitName = "Doe, Jane \"JD\""' "$rerun_tree/home/.config/chezmoi/chezmoi.toml" || {
+    echo 'F1: the recorded gitName did not survive chezmoi init:' >&2
+    cat "$rerun_tree/home/.config/chezmoi/chezmoi.toml" >&2
+    exit 1
+  }
+  rm -rf "$rerun_tree"
+
   # Standalone verify reads the same record; without a config it must fail clearly.
   rm -rf "$HOME_T/.config"
   err="$(env -u WSL_DISTRO_NAME -u XDG_CONFIG_HOME HOME="$HOME_T" OS_RELEASE_FILE="$FX/os-release/ubuntu-26.04" \

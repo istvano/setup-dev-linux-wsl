@@ -17,6 +17,7 @@ TESTS=(
   render-brewfile
   homebrew
   chezmoi-templates
+  identity
   bootstrap
 )
 
