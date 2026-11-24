@@ -65,6 +65,7 @@ mise_missing() {
   }
   [[ -z "$out" ]] || {
     printf 'missing runtimes:\n%s\n' "$out"
+    echo "Remedy: run \`mise install\` (the next ./bootstrap apply also retries it)."
     return 1
   }
 }

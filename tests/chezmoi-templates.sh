@@ -204,6 +204,37 @@ ssh_src="$(render linux.toml "$ROOT/chezmoi/private_dot_ssh/config.tmpl")"
   exit 1
 }
 
+# --- F3 (R20): the runtimes hook fails when mise install fails or mise is missing.
+# chezmoi records a run_onchange_ script as done only when it exits 0, so a reported-
+# but-swallowed failure would never be retried. Run for real against a stub mise, on a
+# PATH without the host's own mise.
+RUNTIMES_HOOK="$ROOT/chezmoi/run_onchange_after_20_configure-runtimes.sh.tmpl"
+render linux.toml "$RUNTIMES_HOOK" >"$TMP/runtimes.sh"
+mkdir -p "$TMP/mise-ok" "$TMP/mise-fail" "$TMP/mise-none"
+printf '#!/bin/sh\nexit 0\n' >"$TMP/mise-ok/mise"
+printf '#!/bin/sh\necho "stub mise: download failed" >&2\nexit 1\n' >"$TMP/mise-fail/mise"
+chmod +x "$TMP/mise-ok/mise" "$TMP/mise-fail/mise"
+BASH_BIN="$(command -v bash)"
+runtimes_hook() { # runtimes_hook STUB_DIR: prints output; status in $rc
+  rc=0
+  hook_out="$(PATH="$1:/usr/bin:/bin" "$BASH_BIN" "$TMP/runtimes.sh" 2>&1)" || rc=$?
+}
+runtimes_hook "$TMP/mise-ok"
+((rc == 0)) || {
+  printf 'runtimes hook failed although mise install succeeded:\n%s\n' "$hook_out" >&2
+  exit 1
+}
+runtimes_hook "$TMP/mise-fail"
+((rc != 0)) || {
+  printf 'runtimes hook exited 0 although mise install failed:\n%s\n' "$hook_out" >&2
+  exit 1
+}
+runtimes_hook "$TMP/mise-none"
+((rc != 0)) && [[ "$hook_out" == *"mise is not installed"* ]] || {
+  printf 'runtimes hook must fail, naming mise, when mise is missing (rc %s):\n%s\n' "$rc" "$hook_out" >&2
+  exit 1
+}
+
 # --- .chezmoiignore keeps repository documents out of $HOME.
 for fixture in "${FIXTURES[@]}"; do
   ignored="$(render "$fixture" "$ROOT/chezmoi/.chezmoiignore")"

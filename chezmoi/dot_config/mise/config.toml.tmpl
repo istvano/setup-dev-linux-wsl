@@ -60,8 +60,10 @@ rust = "stable"
 # per-platform optional dependency; the linux-x64 one applies here.
 "npm:cline" = "3.0.55"
 # OpenAI Codex CLI. Linux has no Homebrew formula (the macOS cask has no Linux build),
-# so it comes from mise's aqua backend, which verifies the release checksum. The aqua
-# registry strips the upstream tag prefix: release rust-v0.172.0 is version 0.172.0.
-# Pinned like the entries above; bumping it is a reviewed edit. See ADR-009.
+# so it comes from mise's aqua backend. The aqua registry strips the upstream tag
+# prefix: release rust-v0.172.0 is version 0.172.0. Pinned like the entries above;
+# bumping it is a reviewed edit. The pin fixes the version only: the registry entry
+# declares no checksum or attestation, so the archive is trusted on GitHub's TLS
+# alone until its SHA-256 is pinned (TASKS.md). See ADR-009.
 "aqua:openai/codex" = "0.172.0"
 {{- end }}

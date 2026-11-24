@@ -10,11 +10,17 @@ set -Eeuo pipefail
 
 # mise provisions every declared runtime, including Rust: it drives rustup and
 # installs rustup itself when absent, so no separate toolchain fix-up is needed.
-if command -v mise >/dev/null 2>&1; then
-  # Reported, not fatal: a single unavailable runtime version must not abort the
-  # apply hooks that follow.
-  mise install || echo "[WARN] mise could not install every declared runtime." >&2
-else
-  echo "[WARN] mise is not installed; skipping runtime installation." >&2
+#
+# Both failures below are fatal on purpose (R20). chezmoi records a run_onchange_ script
+# as done only when it exits 0, so exiting non-zero is what makes the next apply retry
+# it. A reported-but-swallowed failure was recorded as done and never retried. The cost
+# is that chezmoi stops here, so the hooks after this one wait for the next apply.
+if ! command -v mise >/dev/null 2>&1; then
+  echo "[ERROR] mise is not installed (the core profile provides it), so no runtime was installed. chezmoi retries this on the next apply." >&2
+  exit 1
+fi
+if ! mise install; then
+  echo "[ERROR] mise could not install every declared runtime (see above). chezmoi retries this on the next apply; run \`mise install\` to retry by hand." >&2
+  exit 1
 fi
 {{- end }}

@@ -100,8 +100,15 @@ check is for.
 
 Decision: the dev profile no longer lists `codex` in `profiles/dev.Brewfile`. It is
 pinned in `chezmoi/dot_config/mise/config.toml.tmpl` as `"aqua:openai/codex"`, inside
-the `dev` gate, at an exact version. The aqua backend verifies the release checksum,
-and no download-and-run script is involved.
+the `dev` gate, at an exact version. No download-and-run script is involved.
+
+Trust, stated as it is: the pin fixes the VERSION, not the content. The aqua registry
+entry for `openai/codex` (`pkgs/openai/codex/registry.yaml`, checked 2026-11-24)
+declares no checksum, attestation, cosign, SLSA or minisign verification, so aqua
+verifies nothing about the archive beyond what GitHub's TLS gives: the content is
+whatever the `rust-v<version>` release asset is when it is downloaded. A replaced
+release asset would be accepted. Pinning its SHA-256 (for example through a mise
+lockfile with checksums) is an open task in `TASKS.md`.
 
 Consequences: updates are pin bumps in that file, not `brew upgrade`. The upstream
 tag is `rust-v<version>`; the aqua registry strips the prefix, so the pin is the bare

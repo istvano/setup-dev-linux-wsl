@@ -177,6 +177,21 @@ EOF
   }
   rm -rf "$rerun_tree"
 
+  # --- F3 (R20): verify names `mise install` as the remedy for missing runtimes. Every
+  # check verify runs is read-only; stubs stand in for mise and for ssh (the identity
+  # check's GitHub probe), and the rest simply fail on this host, which is expected.
+  stubs="$(mktemp -d "$HOME_T/stubs.XXXXXX")"
+  printf '#!/bin/sh\necho "node  24.0.0  (missing)"\n' >"$stubs/mise"
+  printf '#!/bin/sh\nexit 255\n' >"$stubs/ssh"
+  chmod +x "$stubs/mise" "$stubs/ssh"
+  verify_out="$(env -u WSL_DISTRO_NAME -u XDG_CONFIG_HOME HOME="$HOME_T" PATH="$stubs:$PATH" \
+    OS_RELEASE_FILE="$FX/os-release/ubuntu-26.04" UNAME_M=x86_64 KERNEL_OSRELEASE_FILE="$FX/osrelease/plain" \
+    "$ROOT/script/verify" --target linux 2>&1 || true)"
+  [[ "$verify_out" == *"FAIL: mise runtimes installed"* && "$verify_out" == *"Remedy: run \`mise install\`"* ]] || {
+    printf 'verify must fail the mise check and name "mise install" as the remedy, got:\n%s\n' "$verify_out" >&2
+    exit 1
+  }
+
   # Standalone verify reads the same record; without a config it must fail clearly.
   rm -rf "$HOME_T/.config"
   err="$(env -u WSL_DISTRO_NAME -u XDG_CONFIG_HOME HOME="$HOME_T" OS_RELEASE_FILE="$FX/os-release/ubuntu-26.04" \
