@@ -1,0 +1,14 @@
+# Fixture: OpenPGP signing variant of linux.toml (the key id is a dummy).
+# `target` is detected by chezmoi/.chezmoi.toml.tmpl in real use; fixtures set it directly.
+[data]
+gitName = "Test User"
+gitEmail = "test@example.invalid"
+gitSigningMethod = "gpg"
+gitSigningKey = "0000000000000000"
+workGitDir = "~/work"
+workGitEmail = ""
+profiles = ["core", "dev", "security", "kubernetes", "backup"]
+shell = "zsh"
+target = "linux"
+ephemeral = false
+machineName = "test-host"

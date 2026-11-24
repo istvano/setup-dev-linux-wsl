@@ -1,0 +1,61 @@
+#!/usr/bin/env bash
+# Give this machine its own SSH key, and never move it.
+# Ported from setup-dev-mac/chezmoi/run_onchange_after_12_ssh-key.sh.tmpl.
+#
+# run_after_, not run_onchange_: this must run on EVERY apply. chezmoi re-runs a
+# run_onchange_ script only when its rendered text changes, so a deleted key or a failed
+# first attempt would never be retried. The script is guarded and idempotent.
+#
+# Why per-machine keys rather than one key copied between machines:
+#
+#   * A private key that never leaves the machine that generated it cannot be exposed by
+#     the loss of any other machine. The cost is enrolling one public key per machine;
+#     the benefit is that decommissioning one is a single revocation at the forge.
+#   * Nothing has to be transported to a new machine, which removes the step most likely
+#     to be done insecurely under time pressure.
+#
+# The key is needed for authentication whatever the signing method, so it is ensured
+# unconditionally. It is generated only when absent and never overwritten, removed or
+# re-derived: replacing a key would silently orphan every enrolment of the old one.
+set -Eeuo pipefail
+
+KEY="{{ .chezmoi.homeDir }}/.ssh/id_ed25519"
+
+if [[ -f "$KEY" ]]; then
+  exit 0
+fi
+
+umask 077
+mkdir -p "$(dirname "$KEY")"
+
+# No passphrase: this has to run unattended. The comment in private_dot_ssh/config.tmpl
+# says how to add one. The comment names user and machine so the enrolled keys are
+# distinguishable at the forge, which is the whole point of one key per machine.
+if ! ssh-keygen -t ed25519 -a 100 -N '' \
+  -C "{{ .chezmoi.username }}@$(hostname -s)" \
+  -f "$KEY" >/dev/null; then
+  # Reported, never fatal. chezmoi stops at the first failing script, so exiting non-zero
+  # here would cost every later hook for a key that ./script/identity --check reports as
+  # missing anyway.
+  echo "[WARN] Could not generate an SSH key at $KEY; run ./script/identity --check." >&2
+  exit 0
+fi
+
+chmod 600 "$KEY"
+chmod 644 "$KEY.pub"
+
+cat >&2 <<MSG
+[OK] Generated an SSH key for this machine: $KEY
+     It will not be copied anywhere. Enrol the PUBLIC key below TWICE at GitHub,
+     because authentication and commit signing are separate enrolments:
+
+$(cat "$KEY.pub")
+
+     1. https://github.com/settings/ssh/new  ->  Key type: Authentication Key
+     2. https://github.com/settings/ssh/new  ->  Key type: Signing Key
+     Then switch a checkout from https to ssh:
+       git remote set-url origin git@github.com:<owner>/<repo>.git
+     Check the result with:  ./script/identity --check
+MSG
+
+exit 0

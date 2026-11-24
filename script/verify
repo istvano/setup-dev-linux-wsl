@@ -1,0 +1,105 @@
+#!/usr/bin/env bash
+# Report whether this machine matches the repository. Runs every check, prints one line
+# each, exits 1 if any failed. Changes nothing.
+#
+# Usage: script/verify [--target wsl|linux]   (default: detected)
+#
+# Profiles and shell are read from the chezmoi data that ./bootstrap recorded, so the
+# package check compares against what this machine was set up with, not against the
+# repository defaults. Without an initialised chezmoi there is nothing to compare to,
+# and verify says so and fails.
+#
+# Read-only: it writes no file (the package check renders to a temporary file).
+#
+# The login-shell report is informational and never fails: the repository never
+# changes the account login shell.
+set -Eeuo pipefail
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+# shellcheck source=script/lib/common.sh
+source "$ROOT/script/lib/common.sh"
+
+target=""
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --target)
+      require_value "$1" "${2:-}"
+      target="$2"
+      shift 2
+      ;;
+    *) die "Usage: script/verify [--target wsl|linux]" ;;
+  esac
+done
+[[ -n "$target" ]] || target="$(detect_target)"
+[[ "$target" == wsl || "$target" == linux ]] || die "Unknown --target: $target"
+
+activate_homebrew || true
+
+config="$(chezmoi_config_path)"
+[[ -f "$config" ]] || die "chezmoi is not initialised ($config is missing); run ./bootstrap apply first."
+profiles="$(chezmoi_data '.profiles | join ","')" ||
+  die "Cannot read [data] profiles from $config; run ./bootstrap apply to regenerate it."
+shell_choice="$(chezmoi_data '.shell')" ||
+  die "Cannot read [data] shell from $config; run ./bootstrap apply to regenerate it."
+package_args=(--profiles "$profiles" --shell "$shell_choice")
+# mise shims are not on PATH until the shell rc runs; the Homebrew mise is enough.
+failures=0
+
+# check LABEL COMMAND...: pass or fail on exit status; output shown only on failure.
+check() {
+  local label="$1" out
+  shift
+  if out="$("$@" 2>&1)"; then
+    success "$label"
+  else
+    warn "FAIL: $label"
+    [[ -z "$out" ]] || printf '%s\n' "$out" | sed 's/^/    /' >&2
+    failures=$((failures + 1))
+  fi
+}
+
+mise_missing() {
+  local out
+  out="$(mise ls --missing 2>&1)" || {
+    printf '%s\n' "$out"
+    return 1
+  }
+  [[ -z "$out" ]] || {
+    printf 'missing runtimes:\n%s\n' "$out"
+    echo "Remedy: run \`mise install\` (the next ./bootstrap apply also retries it)."
+    return 1
+  }
+}
+
+no_repos_on_mnt() {
+  local found
+  found="$(repos_under_mnt)"
+  [[ -z "$found" ]] || {
+    printf 'git repositories on the Windows drives (slow, wrong permissions and line endings):\n%s\n' "$found"
+    return 1
+  }
+}
+
+check "platform: Ubuntu 26.04" require_supported_ubuntu
+check "platform: x86_64" require_x86_64
+check "platform: target is $target" require_target "$target"
+check "apt base packages" "$ROOT/script/apt-base" --check
+check "Homebrew" "$ROOT/script/install-homebrew" --check
+check "Homebrew packages ($profiles, $shell_choice)" "$ROOT/script/packages" "${package_args[@]}" --check
+check "mise runtimes installed" mise_missing
+check "uv" uv --version
+# Scripts are excluded: the run_after hooks run on every apply by design, so chezmoi
+# always reports them as "to run" and verify would never pass.
+check "chezmoi: no drift" chezmoi verify --exclude scripts
+check "identity" "$ROOT/script/identity" --check
+if [[ "$target" == wsl ]]; then
+  check "no git repositories under /mnt" no_repos_on_mnt
+fi
+
+# Informational: never counted as a failure.
+login_shell="$(getent passwd "$(id -un)" | cut -d: -f7 || true)"
+log "Account login shell: ${login_shell:-unknown} (informational; this repository never changes it)."
+
+if ((failures > 0)); then
+  die "$failures check(s) failed."
+fi
+success "All checks passed."

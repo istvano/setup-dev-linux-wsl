@@ -1,0 +1,50 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+
+# Reports the account login shell against the selected shell. Changes nothing.
+# Ported from setup-dev-mac/chezmoi/run_onchange_after_30_report-login-shell.sh.tmpl.
+#
+# run_onchange rather than run_once: the selection below is part of the script, so
+# switching shells re-runs this and re-reports.
+#
+# Nothing here calls chsh. Reassigning the login shell is a privileged change to the
+# account, and this repository keeps that class of operation manual.
+SELECTED={{ .shell | quote }}
+
+{{ template "brew-shellenv" . }}
+
+# The account's login shell comes from the account database, not $SHELL, which only
+# names whichever shell launched this apply. LOGIN_SHELL_OVERRIDE exists so the test can
+# stub the answer; it is unset in real use.
+current="${LOGIN_SHELL_OVERRIDE:-}"
+if [[ -z "$current" ]]; then
+  current="$(getent passwd "$(id -un)" | cut -d: -f7)" || true
+fi
+if [[ -z "$current" ]]; then
+  echo "[WARN] Could not read the login shell; skipping the check." >&2
+  exit 0
+fi
+
+if [[ "$(basename "$current")" == "$SELECTED" ]]; then
+  exit 0
+fi
+
+case "$SELECTED" in
+  zsh) selected_path=/usr/bin/zsh ;;
+  *) selected_path="$(command -v "$SELECTED" 2>/dev/null || true)" ;;
+esac
+
+if [[ -z "$selected_path" ]]; then
+  echo "[WARN] $SELECTED is not on PATH; check that its profile fragment installed." >&2
+  exit 0
+fi
+
+# Printed, never run. zsh is a distro package and already listed in /etc/shells. A
+# Homebrew shell is not, and chsh refuses an unlisted shell, so it needs the first line.
+if [[ "$selected_path" == /usr/bin/* ]]; then
+  echo "[INFO] Login shell is $current; to make $SELECTED the login shell, run: chsh -s $selected_path" >&2
+else
+  echo "[INFO] Login shell is $current; to make $SELECTED the login shell, run:" >&2
+  echo "  echo $selected_path | sudo tee -a /etc/shells" >&2
+  echo "  chsh -s $selected_path" >&2
+fi

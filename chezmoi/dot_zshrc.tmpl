@@ -1,0 +1,211 @@
+# Interactive zsh configuration.
+#
+# Ported from setup-dev-mac/chezmoi/dot_zshrc.tmpl. Removed for Linux: the Apple Silicon Homebrew
+# prefix (now the brew-shellenv template) and the Rancher and LM Studio PATH blocks
+# (those runtimes are not part of this repository).
+#
+# Every activation stays guarded by `command -v` so a partially installed
+# workstation still gets a usable shell.
+
+# --- PATH --------------------------------------------------------------------
+
+[[ ":$PATH:" == *":$HOME/.local/bin:"* ]] || export PATH="$HOME/.local/bin:$PATH"
+# Homebrew on Linux lives in a fixed prefix that is defined once, in the brew-shellenv
+# template, and activated at shell start rather than baked in at apply time, so this
+# file does not depend on Homebrew having existed when chezmoi rendered it.
+{{ template "brew-shellenv" . }}
+
+{{ if has "kubernetes" .profiles }}
+# krew installs kubectl plugins into ~/.krew/bin, and kubectl finds plugins by scanning PATH
+# for `kubectl-*`. Without this entry krew works — you can install a plugin and it reports
+# success — and then `kubectl tree` cannot be run, because nothing on PATH provides it. The
+# plugin manager was in the default profile for months in exactly that state.
+#
+# APPENDED: a plugin must never shadow a declared Homebrew binary of the same name.
+#
+# Not guarded on the directory existing. krew creates ~/.krew/bin the first
+# time it installs a plugin, which is often AFTER this shell started, so an existence check
+# would leave the current session unable to run the plugin it just installed.
+[[ ":$PATH:" == *":$HOME/.krew/bin:"* ]] || export PATH="$PATH:$HOME/.krew/bin"
+{{- end }}
+
+# Rust comes from mise, which shims cargo and rustc; no Homebrew keg on PATH.
+
+# --- Completion --------------------------------------------------------------
+
+if command -v brew >/dev/null 2>&1; then
+  FPATH="$(brew --prefix)/share/zsh/site-functions:$FPATH"
+fi
+# complist provides the menuselect keymap that the `menu select` zstyle below
+# relies on; without it, menu selection silently falls back to plain listing.
+zmodload zsh/complist
+autoload -Uz compinit compaudit
+# compinit prompts interactively when it finds group- or world-writable
+# completion directories, which can hang a non-interactive login. Report them
+# instead, so an unsafe directory is noticed rather than silently trusted.
+if compaudit >/dev/null 2>&1; then
+  compinit
+else
+  print -u2 'zsh: insecure completion directories found; run compaudit to review them'
+  compinit -i
+fi
+zstyle ':completion:*' menu select
+zstyle ':completion:*' matcher-list 'm:{a-z}={A-Za-z}'
+
+# Cache generated completions. kubectl, aws and docker have large completion
+# sets that are slow to recompute on every invocation.
+zstyle ':completion:*' use-cache on
+zstyle ':completion:*' cache-path "${XDG_CACHE_HOME:-$HOME/.cache}/zsh/zcompcache"
+
+# --- Keymap ------------------------------------------------------------------
+
+# Chosen explicitly, because otherwise it is a side effect of $EDITOR: zsh uses
+# viins when VISUAL or EDITOR contains the string "vi", and "nvim" does. Without
+# this line the shell silently starts in vi mode and plugin keybindings land in
+# a keymap nobody selected.
+bindkey -e
+
+# --- History -----------------------------------------------------------------
+
+# Atuin is the primary history store, but zsh keeps its own file as well and it
+# is read by anything that does not know about Atuin.
+HISTFILE="$HOME/.zsh_history"
+HISTSIZE=50000
+SAVEHIST=50000
+setopt HIST_IGNORE_SPACE     # a leading space keeps a command out of history
+setopt HIST_IGNORE_ALL_DUPS
+setopt HIST_REDUCE_BLANKS
+setopt HIST_VERIFY           # expand a history reference for review, do not run it
+setopt SHARE_HISTORY
+setopt EXTENDED_HISTORY
+setopt HIST_FCNTL_LOCK       # safe concurrent writes; SHARE_HISTORY means many
+                             # terminals append to the same file
+setopt INTERACTIVE_COMMENTS  # pasting a command with a trailing # comment works
+
+# --- Directory stack ---------------------------------------------------------
+
+setopt AUTO_PUSHD            # every cd pushes, so `cd -<Tab>` lists recent dirs
+setopt PUSHD_IGNORE_DUPS
+setopt PUSHD_SILENT          # pushd/popd do not print the stack
+
+# --- Line editing ------------------------------------------------------------
+
+# Zsh's default WORDCHARS includes "/", which makes Ctrl-W delete a whole path
+# instead of one segment. Removing it is the single most useful zsh line-editing
+# fix; the rest of the default set is preserved.
+WORDCHARS="${WORDCHARS//\//}"
+
+# --- Tool activation ---------------------------------------------------------
+
+command -v mise >/dev/null 2>&1 && eval "$(mise activate zsh)"
+command -v direnv >/dev/null 2>&1 && eval "$(direnv hook zsh)"
+command -v starship >/dev/null 2>&1 && eval "$(starship init zsh)"
+command -v zoxide >/dev/null 2>&1 && eval "$(zoxide init zsh)"
+
+# ORDER MATTERS. fzf and Atuin both bind Ctrl-R, and the one initialised last
+# wins. Atuin is the history store this workstation is built around, so it goes
+# after fzf. Reversing these two silently replaces Atuin search with fzf's,
+# which still works and is therefore easy not to notice.
+# tests/placement-policy.sh asserts this order.
+command -v fzf >/dev/null 2>&1 && eval "$(fzf --zsh)"
+command -v atuin >/dev/null 2>&1 && eval "$(atuin init zsh --disable-ai)"
+
+# fzf uses fd so results honour .gitignore and skip .git.
+if command -v fd >/dev/null 2>&1; then
+  export FZF_DEFAULT_COMMAND='fd --type f --hidden --exclude .git'
+  export FZF_CTRL_T_COMMAND="$FZF_DEFAULT_COMMAND"
+  export FZF_ALT_C_COMMAND='fd --type d --hidden --exclude .git'
+fi
+export FZF_DEFAULT_OPTS='--height 40% --layout=reverse --border'
+
+# --- Editor ------------------------------------------------------------------
+
+# Prefer a terminal editor: `code --wait` is unusable over SSH or in recovery.
+if command -v nvim >/dev/null 2>&1; then
+  export EDITOR="nvim"
+elif command -v vim >/dev/null 2>&1; then
+  export EDITOR="vim"
+else
+  export EDITOR="code --wait"
+fi
+export VISUAL="$EDITOR"
+
+# ripgrep reads its configuration ONLY through this variable — there is no default path it
+# looks in. Without the export, ~/.config/ripgrep/ripgreprc is an inert file and rg silently
+# runs at its defaults, which is the kind of quiet no-op this repository treats as a bug.
+export RIPGREP_CONFIG_PATH="${XDG_CONFIG_HOME:-$HOME/.config}/ripgrep/ripgreprc"
+
+# --- Aliases -----------------------------------------------------------------
+
+# eza replaces ls. --icons=auto needs a Nerd Font in the terminal emulator (on WSL, the
+# Windows host's font); `auto` restricts icons to a real
+# terminal, so a redirect or a pipe still produces plain parsable output.
+if command -v eza >/dev/null 2>&1; then
+  alias ls='eza --icons=auto --group-directories-first'
+  alias ll='eza -l --git --icons=auto --group-directories-first'
+  alias la='eza -la --git --icons=auto --group-directories-first'
+  alias lt='eza --tree --level=2 --icons=auto --group-directories-first'
+fi
+command -v bat >/dev/null 2>&1 && alias cat='bat --paging=never'
+
+# `rm` is deliberately not aliased to trash. Redefining it builds a habit that
+# does not transfer to another machine, a container, or anything run under sudo,
+# where the same keystrokes delete irreversibly. Call trash by name.
+
+# --- Environment -------------------------------------------------------------
+
+export GPG_TTY="$TTY"
+export LESS='-R'
+
+# --- Telemetry opt-out (ADR-006) ---------------------------------------------
+#
+# Only variables whose effect was VERIFIED against the tool's own documentation
+# or source. A plausible-looking variable that nothing reads is worse than none:
+# it reads as coverage and provides none. What could not be verified is left out
+# rather than set here on the chance that it works (setup-dev-mac's ADR-046, which
+# ADR-006 carries over, records what was checked).
+#
+# Kept in step with dot_config/fish/config.fish.tmpl; tests/placement-policy.sh
+# asserts both shells carry the same set, because a telemetry opt-out that
+# depends on which shell you happened to open is not an opt-out.
+#
+# Homebrew analytics are ON by default and go to InfluxDB with 365-day retention
+# (docs.brew.sh/Analytics). This is the widest one here: brew runs on every
+# install and update, and it reports what is installed.
+export HOMEBREW_NO_ANALYTICS=1
+# Azure CLI defaults to collecting: `collect_telemetry` reads with fallback=True
+# in azure/cli/core/telemetry.py. Set although no profile here installs it, because
+# the variable costs nothing on a machine that never does.
+export AZURE_CORE_COLLECT_TELEMETRY=false
+# HashiCorp's checkpoint service, which HashiCorp tools use to check for new versions
+# and report the current one on run. No profile here installs one yet; a project that
+# brings its own is covered without an edit.
+export CHECKPOINT_DISABLE=1
+# consoledonottrack.com: an informal cross-tool convention, not a standard, and
+# honoured only by tools that chose to. It is set as a blanket signal for
+# anything that reads it, NOT as a substitute for the specific variables above.
+export DO_NOT_TRACK=1
+
+# A stricter umask is deliberately not set here: Homebrew fails to build several
+# formulae under umask 077. Rely on disk encryption and per-file modes instead.
+
+# --- Plugins -----------------------------------------------------------------
+
+# Cap what zsh-syntax-highlighting will parse. It re-highlights the entire
+# buffer on every keystroke, so a long pasted command makes typing crawl. This
+# MUST be set before the plugin is sourced; afterwards it has no effect, which
+# tests/placement-policy.sh asserts.
+ZSH_HIGHLIGHT_MAXLENGTH=512
+
+# Syntax highlighting must be sourced last; it wraps the widgets everything
+# else has already registered. The prefix is resolved at shell start rather than
+# at chezmoi apply time so no machine-specific path is baked into the file.
+if command -v brew >/dev/null 2>&1; then
+  __brew_prefix="$(brew --prefix)"
+  for __plugin in \
+    "$__brew_prefix/share/zsh-autosuggestions/zsh-autosuggestions.zsh" \
+    "$__brew_prefix/share/zsh-syntax-highlighting/zsh-syntax-highlighting.zsh"; do
+    [[ -r "$__plugin" ]] && source "$__plugin"
+  done
+  unset __brew_prefix __plugin
+fi

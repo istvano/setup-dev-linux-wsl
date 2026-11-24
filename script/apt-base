@@ -1,0 +1,61 @@
+#!/usr/bin/env bash
+# Install (or with --check, verify) the apt base package list.
+#   script/apt-base           sudo apt-get update, then install the list
+#   script/apt-base --check   report missing packages; exit 1 if any, no sudo
+# APT_BASE_LIST overrides the list file (used by tests).
+set -Eeuo pipefail
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+# shellcheck source=script/lib/common.sh
+source "$ROOT/script/lib/common.sh"
+
+LIST="${APT_BASE_LIST:-$ROOT/apt/base.list}"
+
+usage() {
+  echo 'Usage: script/apt-base [--check]' >&2
+  exit 1
+}
+
+# Print package names from the list: comments and blank lines stripped.
+read_packages() {
+  local line pkg
+  [[ -f "$LIST" ]] || die "Package list not found: $LIST"
+  while IFS= read -r line || [[ -n "$line" ]]; do
+    line="${line%%#*}"
+    IFS=$' \t' read -r pkg _ <<<"$line"
+    [[ -n "$pkg" ]] && printf '%s\n' "$pkg"
+  done <"$LIST"
+  return 0
+}
+
+check_packages() {
+  local pkg missing=0
+  command -v dpkg-query >/dev/null 2>&1 || die "dpkg-query not found; apt-base needs Debian or Ubuntu."
+  while IFS= read -r pkg; do
+    if [[ "$(dpkg-query -W -f='${Status}' "$pkg" 2>/dev/null || true)" != "install ok installed" ]]; then
+      printf 'missing: %s\n' "$pkg"
+      missing=1
+    fi
+  done < <(read_packages)
+  return "$missing"
+}
+
+install_packages() {
+  local packages=()
+  mapfile -t packages < <(read_packages)
+  [[ "${#packages[@]}" -gt 0 ]] || die "No packages in $LIST"
+  sudo apt-get update
+  sudo apt-get install -y --no-install-recommends "${packages[@]}"
+}
+
+case "${1:-}" in
+  --check)
+    [[ $# -eq 1 ]] || usage
+    check_packages
+    ;;
+  '')
+    # --check is read-only and needs no sudo, so only the install path refuses root.
+    require_not_root
+    install_packages
+    ;;
+  *) usage ;;
+esac

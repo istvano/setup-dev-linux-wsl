@@ -1,0 +1,4 @@
+# Homebrew on Linux lives in a fixed prefix; activate it only when present.
+if [ -x /home/linuxbrew/.linuxbrew/bin/brew ]; then
+  eval "$(/home/linuxbrew/.linuxbrew/bin/brew shellenv)"
+fi

@@ -1,0 +1,48 @@
+#!/usr/bin/env bash
+# Install the selected profiles' formulae with Homebrew Bundle. Renders the Brewfile
+# to its default location first, so what is installed is exactly what was reviewed.
+# --check renders to a temporary file instead and writes nothing persistent.
+# Nothing is ever uninstalled; that is deliberate.
+#
+# Usage: script/packages [--profiles CSV] [--shell zsh|fish] [--check]
+set -Eeuo pipefail
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+# shellcheck source=script/lib/common.sh
+source "$ROOT/script/lib/common.sh"
+
+export HOMEBREW_NO_ANALYTICS=1 HOMEBREW_NO_ENV_HINTS=1
+
+render_args=()
+check_only=0
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --profiles | --shell)
+      require_value "$1" "${2:-}"
+      render_args+=("$1" "$2")
+      shift 2
+      ;;
+    --check)
+      check_only=1
+      shift
+      ;;
+    *) die "Usage: script/packages [--profiles CSV] [--shell zsh|fish] [--check]" ;;
+  esac
+done
+
+((check_only)) || require_not_root
+
+activate_homebrew || die "Homebrew is not installed; run script/install-homebrew first."
+
+if ((check_only)); then
+  # --check must write nothing a user would find: render to a temporary file, not the
+  # default location, so plan and verify leave the machine untouched.
+  brewfile="$(mktemp)"
+  trap 'rm -f "$brewfile"' EXIT
+  "$ROOT/script/render-brewfile" "${render_args[@]+"${render_args[@]}"}" --output "$brewfile"
+  brew bundle check --file "$brewfile" --verbose
+  exit
+fi
+brewfile="$(default_brewfile_path)"
+"$ROOT/script/render-brewfile" "${render_args[@]+"${render_args[@]}"}" --output "$brewfile"
+brew bundle install --file "$brewfile"
+success "Packages installed from $brewfile."

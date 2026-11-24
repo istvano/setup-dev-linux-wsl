@@ -1,0 +1,209 @@
+#!/usr/bin/env bash
+# Report whether this machine's git/ssh identity is complete. Changes nothing outside
+# a throwaway repository.
+#
+# Packages are reproducible from this repository; identity is not. The ssh key is
+# GENERATED per machine by chezmoi (run_after_12) and never moved, so a lost
+# machine is revoked at the forge instead of rotated. This script answers the question
+# "can this machine authenticate and sign?" that no package check can.
+#
+#   identity            the same as --check
+#   identity --check    key present and 0600, and commit signing as recorded
+#
+# What "signing as recorded" means follows [data] gitSigningMethod in the chezmoi config
+# (.chezmoi.toml.tmpl offers ssh, gpg and none):
+#   ssh   gpg.format=ssh, and a commit signed and verified in a throwaway repository
+#   gpg   gpg.format=openpgp only; gpg signing itself is NOT exercised by this check
+#   none  nothing beyond the SSH key, which authenticates to the forge whatever the method
+#
+# Ported in spirit from setup-dev-mac/script/identity; the Mac's age-identity restore
+# is not part of this repository.
+set -Eeuo pipefail
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+# shellcheck source=script/lib/common.sh
+source "$ROOT/script/lib/common.sh"
+
+SSH_KEY="$HOME/.ssh/id_ed25519"
+
+usage() {
+  cat <<'USAGE'
+Usage: script/identity [--check]
+
+  --check   report the state of this machine's ssh key and commit signing (default)
+
+The signing method is read from [data] gitSigningMethod in the chezmoi config.
+USAGE
+}
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --check) ;;
+    --help | -h)
+      usage
+      exit 0
+      ;;
+    *) die "Unknown option: $1" ;;
+  esac
+  shift
+done
+
+failures=0
+SCRATCH=""
+trap '[[ -z "$SCRATCH" ]] || rm -rf "$SCRATCH"' EXIT
+pass() { printf '%s[PASS]%s %s\n' "$C_GREEN" "$C_RESET" "$*"; }
+fail() {
+  printf '%s[FAIL]%s %s\n' "$C_RED" "$C_RESET" "$*"
+  failures=$((failures + 1))
+}
+
+# A private key the group or others can read is refused by ssh outright. find's exact
+# -perm match is POSIX, so the check means the same wherever the tests run.
+key_mode_is_600() { [[ -n "$(find "$1" -maxdepth 0 -perm 0600 2>/dev/null)" ]]; }
+
+# Expand a leading ~/ the way git does for user.signingkey.
+expand_home() {
+  case "$1" in
+    \~/*) printf '%s\n' "$HOME/${1#\~/}" ;;
+    *) printf '%s\n' "$1" ;;
+  esac
+}
+
+check_ssh_key() {
+  echo
+  echo '== ssh key =='
+  if [[ ! -f "$SSH_KEY" ]]; then
+    fail "No SSH key at $SSH_KEY. Run chezmoi apply to generate it."
+    return
+  fi
+  if key_mode_is_600 "$SSH_KEY"; then
+    pass "SSH key present at $SSH_KEY (0600)."
+  else
+    fail "$SSH_KEY is not mode 0600; ssh will refuse it."
+  fi
+  if [[ -f "$SSH_KEY.pub" ]]; then
+    # The fingerprint is what the forge shows next to an enrolled key, so it is the
+    # value that can be compared with anything.
+    pass "SSH key fingerprint: $(ssh-keygen -lf "$SSH_KEY.pub" 2>/dev/null || echo 'unreadable')"
+  else
+    fail "$SSH_KEY.pub is missing, so the key cannot be enrolled."
+  fi
+}
+
+# OpenPGP signing needs a secret key and an agent this repository does not manage, so
+# only the configuration is asserted, and the report says signing was not exercised.
+check_gpg_signing() {
+  echo
+  echo '== commit signing (gpg) =='
+  local format
+  format="$(git config --get gpg.format 2>/dev/null || true)"
+  if [[ "$format" != openpgp ]]; then
+    fail "git config gpg.format is '${format:-unset}', expected openpgp."
+    return
+  fi
+  pass 'git config gpg.format is openpgp.'
+  warn 'gpg signing is not exercised by this check; prove it with a signed commit of your own.'
+}
+
+# Prove signing end to end in a throwaway repository: commit, then verify. -c overrides
+# make it work without a global gitconfig, but the key and the allowed_signers file are
+# the ones the user configured; nothing is invented.
+check_ssh_signing() {
+  echo
+  echo '== commit signing (ssh) =='
+  local format key signers email repo
+  format="$(git config --get gpg.format 2>/dev/null || true)"
+  if [[ "$format" != ssh ]]; then
+    fail "git config gpg.format is '${format:-unset}', expected ssh."
+    return
+  fi
+  pass 'git config gpg.format is ssh.'
+
+  key="$(git config --get user.signingkey 2>/dev/null || true)"
+  if [[ -z "$key" ]]; then
+    fail 'git config user.signingkey is not set.'
+    return
+  fi
+  key="$(expand_home "$key")"
+  if [[ "$key" != key::* && ! -f "$key" ]]; then
+    fail "user.signingkey '$key' is neither a key:: literal nor a file."
+    return
+  fi
+
+  signers="$(git config --get gpg.ssh.allowedSignersFile 2>/dev/null || true)"
+  signers="$(expand_home "${signers:-$HOME/.config/git/allowed_signers}")"
+  if [[ ! -f "$signers" ]]; then
+    fail "No allowed_signers file at $signers; run chezmoi apply to regenerate it."
+    return
+  fi
+  email="$(git config --get user.email 2>/dev/null || true)"
+  if [[ -z "$email" ]]; then
+    fail 'git config user.email is not set.'
+    return
+  fi
+
+  repo="$(mktemp -d)"
+  SCRATCH="$repo"
+  local g=(git -C "$repo" -c "user.email=$email" -c user.name=identity-check
+    -c gpg.format=ssh -c "user.signingkey=$key" -c "gpg.ssh.allowedSignersFile=$signers"
+    -c commit.gpgsign=true -c core.hooksPath=/dev/null)
+  git -C "$repo" init -q
+  if ! "${g[@]}" commit -q --allow-empty -m test 2>"$repo/err"; then
+    fail "Signing a commit failed: $(head -n 3 "$repo/err" | tr '\n' ' ')"
+    return
+  fi
+  if "${g[@]}" verify-commit HEAD 2>"$repo/err"; then
+    pass 'A signed commit was created and verified.'
+  else
+    fail "Verifying the signed commit failed: $(head -n 3 "$repo/err" | tr '\n' ' ')"
+  fi
+}
+
+# Network-dependent and informational: it never changes the result. BatchMode refuses to
+# prompt and ConnectTimeout bounds the wait, so a first connection (unknown host key),
+# an offline machine or an unenrolled key all end quickly and quietly. GitHub host keys
+# are deliberately not added automatically; the first manual `ssh -T` asks you to
+# confirm the fingerprint against GitHub's published list.
+check_github() {
+  echo
+  echo '== github =='
+  local out
+  out="$(ssh -T -o BatchMode=yes -o ConnectTimeout=5 git@github.com 2>&1 || true)"
+  if grep -q 'successfully authenticated' <<<"$out"; then
+    pass 'GitHub accepts this machine'"'"'s key.'
+    return
+  fi
+  warn 'Could not confirm GitHub authentication (offline, unknown host key or key not enrolled).'
+  cat <<'REMINDER'
+  Enrol the public key TWICE at https://github.com/settings/ssh/new :
+    once as an Authentication Key, once as a Signing Key.
+  The first connection needs a manual `ssh -T git@github.com` to confirm the host key.
+  See docs/OPERATIONS.md, "Enrol this machine's SSH key".
+REMINDER
+}
+
+# The method chezmoi recorded decides what "complete" means. Unreadable is a failure,
+# not a guess: an unknown signing state is ambiguous security state.
+activate_homebrew || true
+if ! method="$(chezmoi_data '.gitSigningMethod' 2>/dev/null)"; then
+  die "Cannot read [data] gitSigningMethod from $(chezmoi_config_path); run ./bootstrap apply first."
+fi
+
+check_ssh_key
+case "$method" in
+  ssh) check_ssh_signing ;;
+  gpg) check_gpg_signing ;;
+  none)
+    echo
+    echo '== commit signing =='
+    pass 'Commit signing is off (gitSigningMethod = none); only the SSH key is required.'
+    ;;
+  *) fail "Unknown gitSigningMethod '$method' in $(chezmoi_config_path); expected ssh, gpg or none." ;;
+esac
+check_github
+
+echo
+if ((failures == 0)); then
+  success 'Identity is complete on this machine.'
+  exit 0
+fi
+die "$failures identity check(s) failed. See docs/OPERATIONS.md, \"Enrol this machine's SSH key\"."

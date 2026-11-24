@@ -1,0 +1,14 @@
+# Minimal apt base. Everything else comes from Homebrew, mise or vendor repos.
+# One package per line: name, whitespace, "# purpose".
+build-essential  # compiler toolchain; Homebrew on Linux builds from source when no bottle exists
+procps           # ps/pgrep, required by the Homebrew installer
+curl             # HTTP client used by bootstrap and vendor key fetches
+file             # file-type detection, required by the Homebrew installer
+git              # Homebrew is installed by git clone; also the dev baseline
+ca-certificates  # TLS trust store for curl and apt over HTTPS
+gnupg            # apt key handling for vendor repos (not used for signing)
+socat            # relay for the WSL-to-Windows LM Studio bridge (spec 8.2, local-llm profile, a later milestone)
+uidmap           # newuidmap/newgidmap for rootless container tooling
+unzip            # archive extraction for tool downloads
+zsh              # default interactive shell
+locales          # locale generation so UTF-8 locales exist in minimal images

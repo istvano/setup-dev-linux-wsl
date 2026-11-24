@@ -1,0 +1,4 @@
+{{- /* Repository documents that sit in the source tree but are not targets;
+       chezmoi would otherwise write them into $HOME. */ -}}
+README.md
+AGENTS.md

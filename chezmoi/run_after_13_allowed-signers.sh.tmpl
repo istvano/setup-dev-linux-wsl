@@ -1,0 +1,46 @@
+#!/usr/bin/env bash
+# Write ~/.config/git/allowed_signers so `git verify-commit` and `git log --show-signature`
+# can verify commits signed with this machine's key.
+#
+# The file is generated locally from the local public key and is not tracked: it names
+# this machine's key, which exists nowhere else.
+#
+# run_after_, not run_onchange_: it runs on EVERY apply, so replacing the key, deleting
+# the file or fixing a failed key generation is repaired by the next `chezmoi apply`.
+# run_onchange_ would only re-run when the emails below change. The file is rewritten
+# only when its content differs, so a steady-state apply touches nothing.
+#
+# Format, one line per identity: <email> <public key line>
+set -Eeuo pipefail
+
+PUB="{{ .chezmoi.homeDir }}/.ssh/id_ed25519.pub"
+OUT="{{ .chezmoi.homeDir }}/.config/git/allowed_signers"
+
+if [[ ! -f "$PUB" ]]; then
+  echo "[WARN] $PUB does not exist; not writing $OUT. The ssh-key hook generates it; run chezmoi apply again." >&2
+  exit 0
+fi
+
+pubkey="$(head -n 1 "$PUB")"
+mkdir -p "$(dirname "$OUT")"
+
+# Temp file in the destination directory, then an atomic rename: a reader never sees a
+# half-written trust file, and an interrupted run leaves the old one in place.
+tmp="$(mktemp "$OUT.XXXXXX")"
+trap 'rm -f "$tmp"' EXIT
+
+{
+  printf '%s %s\n' {{ .gitEmail | quote }} "$pubkey"
+{{- if .workGitEmail }}
+  printf '%s %s\n' {{ .workGitEmail | quote }} "$pubkey"
+{{- end }}
+} >"$tmp"
+
+# Unchanged content: leave the existing file (and its mtime and mode) alone.
+if [[ -f "$OUT" ]] && cmp -s "$tmp" "$OUT"; then
+  exit 0
+fi
+
+chmod 644 "$tmp"
+mv "$tmp" "$OUT"
+trap - EXIT
