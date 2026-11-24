@@ -1,0 +1,58 @@
+#!/usr/bin/env bash
+# Print every shell script in the repository, one per line.
+#
+# Selection is by shebang rather than by filename extension. Selecting by
+# extension silently skipped every extensionless script in script/, which is
+# how three install-breaking defects reached main without being linted.
+#
+# Ported from setup-dev-mac/script/shell-files; unchanged apart from this header.
+#
+# Chezmoi templates are excluded: they are Go templates that only become valid
+# shell after chezmoi executes them. tests/chezmoi-templates.sh covers those.
+set -Eeuo pipefail
+IFS=$'\n\t'
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+
+# --zsh selects zsh scripts instead, from the same walk, so there is still one selector.
+# They are user tools under chezmoi (conn), not repository scripts: shellcheck cannot
+# parse zsh, so tests/shell-syntax.sh checks them with `zsh -n` instead.
+SHEBANG='^#!.*(bash|/sh)([[:space:]]|$)'
+KIND='shell scripts'
+case "${1-}" in
+  '') ;;
+  --zsh)
+    SHEBANG='^#!.*[/ ]zsh([[:space:]]|$)'
+    KIND='zsh scripts'
+    ;;
+  *)
+    printf 'Unknown option: %s\n' "$1" >&2
+    exit 1
+    ;;
+esac
+
+count=0
+while IFS= read -r file; do
+  case "$file" in
+    *[[:space:]]*)
+      printf 'Shell script path contains whitespace, which callers do not support: %s\n' \
+        "$file" >&2
+      exit 1
+      ;;
+  esac
+  printf '%s\n' "$file"
+  count=$((count + 1))
+done < <(
+  find "$ROOT" -type f \
+    -not -path '*/.git/*' \
+    -not -name '*.tmpl' \
+    -not -name '*.backup.*' \
+    -exec sh -c 'head -n 1 "$1" | grep -qE "$2"' _ {} "$SHEBANG" \; \
+    -print | sort
+)
+
+# A selector that matches nothing must fail loudly rather than let every
+# downstream check pass vacuously.
+if ((count == 0)); then
+  printf 'No %s discovered under %s; the selector is broken.\n' "$KIND" "$ROOT" >&2
+  exit 1
+fi

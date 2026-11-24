@@ -1,0 +1,19 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+# shellcheck source=script/lib/common.sh
+source "$ROOT/script/lib/common.sh"
+
+require_bash5
+
+# tests/lib.sh holds shared assertions and is sourced, not run.
+TESTS=(
+  shell-syntax
+  format
+)
+
+for test in "${TESTS[@]}"; do
+  bash "$ROOT/tests/$test.sh"
+done
+
+echo 'All repository tests passed.'
