@@ -12,7 +12,7 @@ source "$ROOT/script/lib/profiles.sh"
 PROFILES="$DEFAULT_PROFILES"
 # SHELL names the running shell, so the selection needs its own name.
 SHELL_CHOICE="zsh"
-OUTPUT="${XDG_CONFIG_HOME:-$HOME/.config}/setup-dev-linux-wsl/Brewfile"
+OUTPUT="$(default_brewfile_path)"
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --profiles)

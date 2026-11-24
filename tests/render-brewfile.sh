@@ -62,4 +62,38 @@ refute_command '--output without a value accepted' "$RENDER" --output
   exit 1
 }
 
+# script/packages renders with the caller's selection and never removes anything.
+PACKAGES="$ROOT/script/packages"
+assert_match '^[[:space:]]*--profiles \| --shell\)' "$PACKAGES"
+assert_match 'script/render-brewfile" .*render_args' "$PACKAGES"
+assert_match 'brew bundle check' "$PACKAGES"
+assert_match 'brew bundle install' "$PACKAGES"
+refute_match 'brew bundle (cleanup|dump)' "$PACKAGES"
+assert_match 'default_brewfile_path' "$RENDER"
+assert_match 'default_brewfile_path' "$PACKAGES"
+refute_command 'packages: --profiles without a value accepted' "$PACKAGES" --profiles
+refute_command 'packages: unknown option accepted' "$PACKAGES" --nope
+
+# Behaviour with a stub brew: the selection reaches the rendered file and brew is
+# asked to check/install exactly that file.
+STUB="$TMP/prefix"
+mkdir -p "$STUB/bin"
+cat >"$STUB/bin/brew" <<'STUBEOF'
+#!/usr/bin/env bash
+# A real brew's shellenv puts its own bin first; the stub must do the same.
+if [[ "${1-}" == shellenv ]]; then
+  printf 'export PATH="%s:$PATH"\n' "$(dirname "${BASH_SOURCE[0]}")"
+  exit 0
+fi
+printf '%s\n' "$*" >>"$BREW_LOG"
+STUBEOF
+chmod +x "$STUB/bin/brew"
+export BREW_LOG="$TMP/brew.log"
+BREW_PREFIX="$STUB" XDG_CONFIG_HOME="$TMP/xdg" "$PACKAGES" --check --profiles core --shell fish >/dev/null
+rendered="$TMP/xdg/setup-dev-linux-wsl/Brewfile"
+assert_match '^# Profiles: core$' "$rendered"
+assert_match '^# ---- shell-fish\.Brewfile ----$' "$rendered"
+assert_match "^bundle check --file $rendered --verbose$" "$BREW_LOG"
+refute_command 'packages: missing Homebrew accepted' env BREW_PREFIX="$TMP/none" "$PACKAGES" --check
+
 echo 'render-brewfile tests passed.'

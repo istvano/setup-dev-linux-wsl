@@ -166,3 +166,9 @@ activate_homebrew() {
   # eval is vendor shell initialisation: `brew shellenv` prints export statements.
   eval "$("$BREW_PREFIX/bin/brew" shellenv)"
 }
+
+# Where script/render-brewfile writes by default and script/packages reads from, so
+# the location has one definition.
+default_brewfile_path() {
+  printf '%s\n' "${XDG_CONFIG_HOME:-$HOME/.config}/setup-dev-linux-wsl/Brewfile"
+}
