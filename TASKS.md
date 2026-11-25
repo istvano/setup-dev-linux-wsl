@@ -44,7 +44,9 @@ phasing (section 9).
 
 Security and correctness:
 
-- [ ] Pin codex's SHA-256: the aqua registry entry declares no checksum, so the
+- [ ] Refresh `homebrew/brew.lock` when Homebrew releases (ADR-011). It only anchors
+      the verified first clone; `brew update` follows, so nothing installed is stale.
+- [ ] Verify codex's SHA-256: the aqua registry entry declares no checksum, so the
       archive is trusted on GitHub TLS alone (ADR-009). A mise lockfile with
       checksums is one way.
 - [ ] Spec 7.3 preflight "ext4 home" is not implemented.

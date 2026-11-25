@@ -2,70 +2,51 @@
 experimental = true
 idiomatic_version_file_enable_tools = ["node", "python", "java", "go"]
 {{- if has "dev" .profiles }}
-# Runtimes are pinned to an explicit release line, a major (node 24) or a minor
-# (go 1.26), rather than a floating alias (the newest release, or an LTS channel).
-# mise installs the newest release within the line, so patch releases arrive
-# without an edit; moving to another line is a reviewed edit to this file. rust is
-# the exception: "stable" follows rustup's stable channel. See ADR-003.
+# Latest stable of every component, never an old pin (ADR-011). node follows its LTS
+# line ("lts"); rust follows rustup's stable channel ("stable"); the JVM keeps three LTS
+# major lines side by side (below); everything else is "latest". mise's `latest` skips
+# prereleases for these backends (checked 2026-11-25: python hides 3.16 alphas, npm
+# skips nightly dist-tags, aqua lists releases only). Reproducibility is traded for
+# currency on purpose; this departs from setup-dev-mac's ADR-045.
 [tools]
-node = "24"
-# Go supports the two most recent majors and nothing older. 1.25 sat here until
-# 1.27 shipped, at which point it stopped receiving security fixes — silently,
-# because nothing checked it. Nothing here checks it yet either: a currency report
-# (update-report) is an open task in TASKS.md.
-#
-# 1.26 rather than 1.27 is a choice, not a default: it is in support today and is
-# the smaller step from what projects were building against. It falls out of
-# support when 1.28 ships, which is the point to move again.
-go = "1.26"
-# pnpm 10 was a full major behind. 11 changes global-install and lockfile
-# behaviour, so a project that has not been opened since is worth a check.
-pnpm = "11"
+node = "lts"
+go = "latest"
+pnpm = "latest"
 # Python is listed in idiomatic_version_file_enable_tools above, so it needs a [tools]
 # entry too: otherwise mise honours a .python-version and installs nothing, and
 # `python3` resolves to the distro build, which is not a runtime anyone chose. uv stays
-# the project-level tool for dependencies and virtualenvs; this pins the interpreter
+# the project-level tool for dependencies and virtualenvs; this supplies the interpreter
 # underneath it.
-python = "3.14"
+python = "latest"
 # The JVM ecosystem, all of it, from the same manager that owns every other language.
+# SDKMAN was considered and rejected: it needs a download-and-run installer that edits
+# the shell rc files chezmoi owns, and mise covers the same ground.
 #
-# SDKMAN is the usual answer here and was considered. It is not in Homebrew core, so
-# installing it means a third-party tap or a download-and-run installer, and its
-# installer appends its own init to the shell rc files that chezmoi owns. mise covers
-# the same ground, so the JVM is not a special case needing a second manager.
-#
-# Three JDKs: 21 is the default because it is first, 17 is present because Couchbase SDK and
-# connector work still spans it. `mise use java@temurin-17` in a project switches it, which
-# is the per-project selection SDKMAN users expect.
-#
-# 25 is the newest LTS and is APPENDED, deliberately. mise takes the first entry as the
-# default, so putting 25 first would move every project that has not asked for a JDK onto a
-# new major without an edit anywhere in that project. Listing it last makes it available to
-# `mise use java@temurin-25` and changes nothing else. Promoting it is a one-line edit when
-# the work has actually been tried on it.
+# Three LTS major lines are kept side by side, each resolving to its latest patch: 21 is
+# the default because it is first, 17 stays because Couchbase SDK and connector work
+# still spans it, and 25 is the newest LTS, APPENDED so that mise (which takes the first
+# entry as the default) does not move projects onto it unasked. `mise use
+# java@temurin-25` in a project selects it. Major lines are not "latest": a JDK major is
+# a compatibility boundary, not a patch.
 java = ["temurin-21", "temurin-17", "temurin-25"]
-maven = "3.9"
-gradle = "9"
-kotlin = "2.4"
+maven = "latest"
+gradle = "latest"
+kotlin = "latest"
 # mise manages Rust by driving rustup and installing rustup itself when absent,
 # so Homebrew does not also install one.
 rust = "stable"
 # The one entry here that is a CLI rather than a runtime. Cline's own install
 # instruction is `npm i -g cline`; that would land under whichever Node prefix mise
-# currently owns and disappear at the next `node` bump, run every lifecycle script in
-# the tree, and leave the version undeclared. The npm: backend keeps the pin in the
-# same file that decides the Node version, and mise orders node ahead of npm: tools.
-#
-# Pinned for the same reason as the runtimes above. Do NOT add allow_builds: mise's
-# embedded installer denies dependency lifecycle scripts by default, and cline's own
-# postinstall is only a startup optimisation. It resolves a pre-built binary from a
-# per-platform optional dependency; the linux-x64 one applies here.
-"npm:cline" = "3.0.55"
+# currently owns and disappear at the next `node` bump, and run every lifecycle script in
+# the tree. The npm: backend keeps it in the same file that decides the Node version, and
+# mise orders node ahead of npm: tools. Do NOT add allow_builds: mise's embedded installer
+# denies dependency lifecycle scripts by default, and cline's own postinstall is only a
+# startup optimisation (a pre-built binary from a per-platform optional dependency).
+"npm:cline" = "latest"
 # OpenAI Codex CLI. Linux has no Homebrew formula (the macOS cask has no Linux build),
 # so it comes from mise's aqua backend. The aqua registry strips the upstream tag
-# prefix: release rust-v0.172.0 is version 0.172.0. Pinned like the entries above;
-# bumping it is a reviewed edit. The pin fixes the version only: the registry entry
-# declares no checksum or attestation, so the archive is trusted on GitHub's TLS
-# alone until its SHA-256 is pinned (TASKS.md). See ADR-009.
-"aqua:openai/codex" = "0.172.0"
+# prefix: release rust-v0.172.0 is version 0.172.0. The registry entry declares no
+# checksum or attestation, so the archive is trusted on GitHub's TLS alone (TASKS.md).
+# See ADR-009 and ADR-011.
+"aqua:openai/codex" = "latest"
 {{- end }}

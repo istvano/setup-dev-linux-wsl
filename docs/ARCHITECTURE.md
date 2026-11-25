@@ -12,7 +12,7 @@ machine or VM (`--target linux`). Nothing else is supported.
 1. apt: a small base set (`apt/base.list`). Vendor repos with committed keys arrive in
    a later milestone.
 2. Homebrew on Linux: CLI tools, from rendered profile Brewfiles.
-3. mise: language runtimes; uv for Python.
+3. mise: language runtimes at the latest stable version (node LTS, Java LTS lines; ADR-011); uv for Python.
 4. chezmoi: dotfiles, rooted at `chezmoi/` through `.chezmoiroot`.
 
 ## Flow

@@ -93,14 +93,32 @@ assert_match 'gitName = \\"CI, Bot\\"' "$VALIDATE"
 MISE_CONFIG="$ROOT/chezmoi/dot_config/mise/config.toml.tmpl"
 RUNTIMES_HOOK="$ROOT/chezmoi/run_onchange_after_20_configure-runtimes.sh.tmpl"
 
-# Runtimes are pinned to explicit versions; a floating one changes the toolchain
-# under a project without any edit.
-refute_match '"latest"' "$MISE_CONFIG"
-refute_match '= *"lts"' "$MISE_CONFIG"
+# ADR-011: the latest stable of every component, never an old pin. Every [tools] value
+# is "latest", "lts" (node only), "stable" (rust only) or a Java LTS major line; no tool
+# carries a hard-coded patch version. Comment lines are excluded.
+tool_lines="$(grep -vE '^[[:space:]]*#' "$MISE_CONFIG" | grep -E '^"?[A-Za-z:/_-]+"? *= ')"
+while IFS= read -r line; do
+  key="${line%%=*}"
+  key="${key//[ \"]/}"
+  value="${line#*=}"
+  value="${value# }"
+  case "$key:$value" in
+    node:'"lts"' | rust:'"stable"') ;;
+    java:'["temurin-21", "temurin-17", "temurin-25"]') ;;
+    *:'"latest"') ;;
+    *:*)
+      echo "mise [tools] entry $key = $value violates ADR-011 (latest/lts/stable/Java LTS only)." >&2
+      exit 1
+      ;;
+  esac
+done <<<"$(grep -vE '^(experimental|idiomatic_version_file_enable_tools) ' <<<"$tool_lines")"
+refute_match '^[^#]*"[0-9]+[.][0-9]+' "$MISE_CONFIG"
+assert_match '^node = "lts"$' "$MISE_CONFIG"
+assert_match '^rust = "stable"$' "$MISE_CONFIG"
 
-# codex has no Linux Homebrew formula (ADR-009): it is pinned through mise's aqua
-# backend at an exact version, and must not return to the Brewfile.
-assert_match '^"aqua:openai/codex" = "[0-9]+[.][0-9]+[.][0-9]+"$' "$MISE_CONFIG"
+# codex has no Linux Homebrew formula (ADR-009): it comes through mise's aqua backend
+# at "latest" (ADR-011), and must not return to the Brewfile.
+assert_match '^"aqua:openai/codex" = "latest"$' "$MISE_CONFIG"
 refute_match '^brew "codex"' "$ROOT/profiles"
 
 # Homebrew lives under /home/linuxbrew; the Apple Silicon prefix must not leak in.
