@@ -106,20 +106,21 @@ integration rehearsal on 2026-11-24 found it, which is what the formula-availabi
 check is for.
 
 Decision: the dev profile no longer lists `codex` in `profiles/dev.Brewfile`. It is
-pinned in `chezmoi/dot_config/mise/config.toml.tmpl` as `"aqua:openai/codex"`, inside
-the `dev` gate, at an exact version. No download-and-run script is involved.
+declared in `chezmoi/dot_config/mise/config.toml.tmpl` as `"aqua:openai/codex"`, inside
+the `dev` gate, at `"latest"` (ADR-011; it was an exact pin when this was written). No download-and-run script is involved.
 
-Trust, stated as it is: the pin fixes the VERSION, not the content. The aqua registry
+Trust, stated as it is: the version string never fixed the content. The aqua registry
 entry for `openai/codex` (`pkgs/openai/codex/registry.yaml`, checked 2026-11-24)
 declares no checksum, attestation, cosign, SLSA or minisign verification, so aqua
 verifies nothing about the archive beyond what GitHub's TLS gives: the content is
 whatever the `rust-v<version>` release asset is when it is downloaded. A replaced
-release asset would be accepted. Pinning its SHA-256 (for example through a mise
+release asset would be accepted. Verifying its SHA-256 (for example through a mise
 lockfile with checksums) is an open task in `TASKS.md`.
 
-Consequences: updates are pin bumps in that file, not `brew upgrade`. The upstream
-tag is `rust-v<version>`; the aqua registry strips the prefix, so the pin is the bare
-version. `tests/placement-policy.sh` asserts the pin and that it is not floating.
+Consequences: updates come through mise, not `brew upgrade`. ADR-011 supersedes the
+original wording "updates are pin bumps": there is no pin. The upstream tag is
+`rust-v<version>`; the aqua registry strips the prefix. `tests/placement-policy.sh`
+asserts the entry is `"latest"`.
 
 ## ADR-010: Opt-in security-scan, cloud and docs profiles; krew plugins
 
@@ -151,3 +152,34 @@ sniff needs packet-capture privileges in the pod and popeye is stale.
 Also: `wget` and `libxml2-utils` join the apt base (the curl-pipe-shell refutation
 concerns pipes, not the package), and `docs/DROPPED.md` records tools deliberately
 not adopted, so the question is not reopened by accident.
+
+## ADR-011: Install the latest stable versions
+
+Status: accepted. Operator decision, 2026-11-25.
+
+Context: the mise config pinned runtimes to release lines (node 24, go 1.26, ...) and
+CLIs to exact versions, so a fresh setup installed software that was already behind.
+
+Decision: the setup installs the LATEST STABLE version of every component. In the mise
+config, `node = "lts"` (Node's recommended line), `rust = "stable"` (rustup's channel)
+and `"latest"` for go, pnpm, python, maven, gradle, kotlin, `"npm:cline"` and
+`"aqua:openai/codex"`. Java keeps three LTS major lines side by side (temurin 21, 17
+and 25, each resolving to its latest patch) because a JDK major is a compatibility
+boundary. `tests/placement-policy.sh` asserts that every `[tools]` entry is one of
+those spellings and that no tool carries a hard-coded patch version. Prereleases:
+checked 2026-11-25 with `mise latest` and `mise ls-remote`; the python core plugin
+hides alphas, the npm backend skips nightly dist-tags and the aqua backend lists
+releases only, so `"latest"` is safe for all of them.
+
+Homebrew: `homebrew/brew.lock` still anchors the verified first clone (ADR-004), but
+`brew update` runs immediately afterwards, so the installed Homebrew is the latest. The
+lock is refreshed when Homebrew releases (TASKS.md).
+
+This departs deliberately from setup-dev-mac ADR-045 ("nothing floats"). It supersedes
+ADR-009's "updates are pin bumps" for codex and ADR-003's "mise runtimes" scope (versions are now latest).
+
+Trade-off: reproducibility is traded for currency. Two applies on different days can
+install different toolchains, and a new release can break a project until it is
+checked. mise still verifies checksums where the backend supports it; the aqua codex
+entry declares none (ADR-009, TASKS.md). CI's own tools and GitHub Actions remain
+pinned.
