@@ -14,3 +14,4 @@ wget             # fallback HTTP client some vendor tools and scripts expect; ne
 libxml2-utils    # xmllint for validating and formatting XML
 zsh              # default interactive shell
 locales          # locale generation so UTF-8 locales exist in minimal images
+vim              # the classic editor, for scripts and muscle memory; nvim stays the default editor

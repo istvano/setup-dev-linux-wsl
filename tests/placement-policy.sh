@@ -96,7 +96,7 @@ RUNTIMES_HOOK="$ROOT/chezmoi/run_onchange_after_20_configure-runtimes.sh.tmpl"
 # ADR-011: the latest stable of every component, never an old pin. Every [tools] value
 # is "latest", "lts" (node only), "stable" (rust only) or a Java LTS major line; no tool
 # carries a hard-coded patch version. Comment lines are excluded.
-tool_lines="$(grep -vE '^[[:space:]]*#' "$MISE_CONFIG" | grep -E '^"?[A-Za-z:/_-]+"? *= ')"
+tool_lines="$(grep -vE '^[[:space:]]*#' "$MISE_CONFIG" | grep -E '^"?[A-Za-z:/@_-]+"? *= ')"
 while IFS= read -r line; do
   key="${line%%=*}"
   key="${key//[ \"]/}"
@@ -120,6 +120,25 @@ assert_match '^rust = "stable"$' "$MISE_CONFIG"
 # at "latest" (ADR-011), and must not return to the Brewfile.
 assert_match '^"aqua:openai/codex" = "latest"$' "$MISE_CONFIG"
 refute_match '^brew "codex"' "$ROOT/profiles"
+
+# GitHub Copilot CLI: mise's npm: backend at "latest" (ADR-011), like cline. The scoped
+# name carries an @, which the [tools] spelling loop above must still see.
+assert_match '^"npm:@github/copilot" = "latest"$' "$MISE_CONFIG"
+grep -qE '^"npm:@github/copilot"' <<<"$tool_lines" ||
+  {
+    echo 'the ADR-011 spelling loop does not see scoped npm: entries' >&2
+    exit 1
+  }
+
+# New small tools carry purpose comments (render-brewfile.sh checks the syntax) and sit in
+# the profiles the brief assigns; vim comes from apt next to nvim, which stays the editor.
+assert_match '^brew "midnight-commander" +# Two-pane terminal file manager \(mc\)\.$' "$ROOT/profiles/core.Brewfile"
+assert_match '^brew "fastfetch" +# System information summary\.$' "$ROOT/profiles/core.Brewfile"
+assert_match '^brew "cilium-cli" +# Cilium CNI management\.$' "$ROOT/profiles/kubernetes.Brewfile"
+assert_match '^brew "hubble" +# Cilium network observability CLI\.$' "$ROOT/profiles/kubernetes.Brewfile"
+assert_match '^vim +# the classic editor, for scripts and muscle memory; nvim stays the default editor$' "$ROOT/apt/base.list"
+assert_match '^brew "neovim"' "$ROOT/profiles/core.Brewfile"
+refute_match '^brew "vim"' "$ROOT/profiles"
 
 # Homebrew lives under /home/linuxbrew; the Apple Silicon prefix must not leak in.
 refute_match '/opt/homebrew' "$ROOT/chezmoi"
