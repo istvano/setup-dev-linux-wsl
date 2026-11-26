@@ -84,6 +84,9 @@ check "platform: x86_64" require_x86_64
 check "platform: target is $target" require_target "$target"
 check "apt base packages" "$ROOT/script/apt-base" --check
 check "vendor apt repositories and packages ($profiles)" "$ROOT/script/apt-vendor" --profiles "$profiles" --target "$target" --check
+if [[ ",$profiles," == *,runtime-docker,* ]]; then
+  check "Docker Engine (dockerd, docker group, daemon.json)" "$ROOT/script/docker-setup" --profiles "$profiles" --check
+fi
 check "Homebrew" "$ROOT/script/install-homebrew" --check
 check "Homebrew packages ($profiles, $shell_choice)" "$ROOT/script/packages" "${package_args[@]}" --check
 check "mise runtimes installed" mise_missing

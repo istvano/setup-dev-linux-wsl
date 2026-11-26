@@ -1,0 +1,168 @@
+#!/usr/bin/env bash
+# Configure Docker Engine on the linux target (profile runtime-docker). The packages
+# themselves come from script/apt-vendor; this script owns what surrounds them.
+#   script/docker-setup --profiles CSV --remove-conflicts [--check]
+#       remove docker.io and podman-docker (and only those) when installed. Runs BEFORE
+#       apt-vendor so docker-ce never has to be resolved against them (ruling R5).
+#   script/docker-setup --profiles CSV [--check]
+#       the above, then /etc/docker/daemon.json, dockerd enabled and running, and the
+#       operator in the docker group. Runs AFTER apt-vendor.
+#   --check reports drift and exits 1 if any; it needs no sudo and changes nothing.
+#
+# Nothing happens unless the profile list contains runtime-docker. Membership of the
+# docker group is root-equivalent: anyone in it can mount the host filesystem into a
+# container. It takes effect at the next login. The daemon runs rootful under systemd
+# and publishes ports on every interface unless a project binds them to 127.0.0.1;
+# that is the operator's decision for this target, so daemon.json sets only the log
+# driver. A replaced daemon.json is first copied to daemon.json.backup.<UTC timestamp>.
+#
+# Overridable for tests: DOCKER_DAEMON_JSON, DOCKER_SETUP_USER.
+set -Eeuo pipefail
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+# shellcheck source=script/lib/common.sh
+source "$ROOT/script/lib/common.sh"
+
+DAEMON_JSON="${DOCKER_DAEMON_JSON:-/etc/docker/daemon.json}"
+DAEMON_JSON_CONTENT='{"log-driver": "local"}'
+CONFLICTS=(docker.io podman-docker)
+
+usage() {
+  echo 'Usage: script/docker-setup --profiles CSV [--remove-conflicts] [--check]' >&2
+  exit 1
+}
+
+profiles=""
+check=0
+conflicts_only=0
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --profiles)
+      require_value "$1" "${2:-}"
+      profiles="$2"
+      shift 2
+      ;;
+    --remove-conflicts)
+      conflicts_only=1
+      shift
+      ;;
+    --check)
+      check=1
+      shift
+      ;;
+    *) usage ;;
+  esac
+done
+[[ -n "$profiles" ]] || usage
+
+if [[ ",$profiles," != *,runtime-docker,* ]]; then
+  log "runtime-docker is not selected; nothing to do."
+  exit 0
+fi
+
+command_exists dpkg-query || die "dpkg-query not found; docker-setup needs Debian or Ubuntu."
+user="${DOCKER_SETUP_USER:-$(id -un)}"
+
+pkg_installed() {
+  [[ "$(dpkg-query -W -f='${Status}' "$1" 2>/dev/null || true)" == "install ok installed" ]]
+}
+
+# installed_conflicts: print each conflicting package that is installed.
+installed_conflicts() {
+  local pkg
+  for pkg in "${CONFLICTS[@]}"; do
+    ! pkg_installed "$pkg" || printf '%s\n' "$pkg"
+  done
+}
+
+in_docker_group() {
+  getent group docker | awk -F: -v u="$user" '
+    { n = split($4, m, ","); for (i = 1; i <= n; i++) if (m[i] == u) found = 1 }
+    END { exit !found }'
+}
+
+daemon_json_matches() {
+  [[ -f "$DAEMON_JSON" && "$(cat "$DAEMON_JSON")" == "$DAEMON_JSON_CONTENT" ]]
+}
+
+dockerd_enabled() { systemctl is-enabled --quiet docker 2>/dev/null; }
+dockerd_active() { systemctl is-active --quiet docker 2>/dev/null; }
+
+if ((check)); then
+  drift=0
+  while IFS= read -r pkg; do
+    printf 'conflict: %s is installed and conflicts with docker-ce\n' "$pkg"
+    drift=1
+  done < <(installed_conflicts)
+  if ((! conflicts_only)); then
+    daemon_json_matches || {
+      printf 'drift: %s is missing or is not exactly %s\n' "$DAEMON_JSON" "$DAEMON_JSON_CONTENT"
+      drift=1
+    }
+    dockerd_enabled || {
+      printf 'drift: docker.service is not enabled\n'
+      drift=1
+    }
+    dockerd_active || {
+      printf 'drift: docker.service is not active\n'
+      drift=1
+    }
+    in_docker_group || {
+      printf 'drift: %s is not in the docker group\n' "$user"
+      drift=1
+    }
+  fi
+  exit "$drift"
+fi
+
+require_not_root
+
+remove_conflicts() {
+  local pkgs=()
+  while IFS= read -r pkg; do pkgs+=("$pkg"); done < <(installed_conflicts)
+  if ((${#pkgs[@]} > 0)); then
+    log "Removing conflicting packages: ${pkgs[*]}"
+    sudo apt-get remove -y "${pkgs[@]}"
+  else
+    log "No conflicting Docker packages installed."
+  fi
+}
+
+remove_conflicts
+((! conflicts_only)) || exit 0
+
+command_exists systemctl || die "systemctl not found; Docker on this target runs under systemd."
+
+# daemon.json first, so the first start (or the restart below) already uses it.
+restart=0
+if daemon_json_matches; then
+  log "$DAEMON_JSON already in place."
+else
+  sudo mkdir -p "$(dirname "$DAEMON_JSON")"
+  if [[ -e "$DAEMON_JSON" ]]; then
+    backup="${DAEMON_JSON}.backup.$(date -u +%Y%m%dT%H%M%SZ)"
+    sudo cp -p "$DAEMON_JSON" "$backup"
+    log "Backed up $DAEMON_JSON to $backup"
+  fi
+  tmp="$(mktemp)"
+  trap 'rm -f "$tmp"' EXIT
+  printf '%s\n' "$DAEMON_JSON_CONTENT" >"$tmp"
+  sudo install -m 0644 "$tmp" "$DAEMON_JSON"
+  log "Wrote $DAEMON_JSON"
+  restart=1
+fi
+
+if dockerd_active && ((restart)); then
+  log "Restarting docker so the new daemon.json applies (running containers stop)."
+  sudo systemctl restart docker
+fi
+if ! dockerd_enabled || ! dockerd_active; then
+  sudo systemctl enable --now docker
+fi
+
+if in_docker_group; then
+  log "$user is already in the docker group."
+else
+  getent group docker >/dev/null || die "The docker group does not exist; run script/apt-vendor first (docker-ce creates it)."
+  sudo usermod -aG docker "$user"
+  warn "Added $user to the docker group. It takes effect at your next login. Membership is root-equivalent: anyone in the group can mount the host filesystem into a container."
+fi

@@ -15,6 +15,7 @@ TESTS=(
   profiles
   apt
   apt-vendor
+  docker-setup
   render-brewfile
   homebrew
   chezmoi-templates

@@ -61,7 +61,7 @@ proxy file) and the oh-my-zsh git shortcuts (`gst`, `gco`, ...). See OPERATIONS.
 | cloud-azure | no | kubelogin, and azure-cli from Microsoft's signed apt repository |
 | cloud-gcp | no | gcloud (`google-cloud-cli`) from Google's signed apt repository |
 | docs | no | d2 and pandoc for diagrams and documents |
-| runtime-docker | no | Docker Engine from Docker's signed apt repository (`--target linux` only for now) |
+| runtime-docker | no | Docker Engine from Docker's signed apt repository, rootful under systemd, you in the root-equivalent `docker` group, `daemon.json` log driver `local`; removes `docker.io` and `podman-docker` first (`script/docker-setup`; `--target linux` only for now) |
 | ai-agents | no | Claude Code from Anthropic's signed apt repository |
 | gpu-nvidia | no | NVIDIA Container Toolkit from NVIDIA's signed apt repository (`--target linux` only for now) |
 ## Documentation

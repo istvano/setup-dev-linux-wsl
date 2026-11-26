@@ -12,7 +12,7 @@
 #   --git-name NAME         git user.name (chezmoi prompt "Git user.name")
 #   --git-email EMAIL       git user.email (chezmoi prompt "Git user.email")
 #
-# Order: guards, apt-base, apt-vendor, install-homebrew, packages, chezmoi, verify. Exit 0 on
+# Order: guards, apt-base, docker conflicts, apt-vendor, docker setup, install-homebrew, packages, chezmoi, verify. Exit 0 on
 # success, 1 on failure. Never run as root; the individual steps elevate themselves.
 set -Eeuo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -316,7 +316,11 @@ apply_chezmoi() {
 log "Target: $target; profiles: $profiles; shell: $shell_choice; mode: $command_name"
 
 run_step "apt base packages" "$ROOT/script/apt-base"
+# docker.io and podman-docker go before docker-ce is installed (ruling R5); the rest of
+# the Docker setup needs docker-ce's unit and group, so it follows the vendor step.
+run_step "docker conflicts" "$ROOT/script/docker-setup" --profiles "$profiles" --remove-conflicts
 run_step "vendor apt" "$ROOT/script/apt-vendor" --profiles "$profiles" --target "$target"
+run_step "Docker Engine" "$ROOT/script/docker-setup" --profiles "$profiles"
 run_step "Homebrew" "$ROOT/script/install-homebrew"
 activate_homebrew || [[ "$command_name" == plan ]] || die "Homebrew did not activate after install."
 run_step "Homebrew packages" "$ROOT/script/packages" --profiles "$profiles" --shell "$shell_choice"
