@@ -1,0 +1,108 @@
+#!/usr/bin/env bash
+# llm-relay — reach LM Studio on Windows from WSL, with nothing on a network interface.
+#
+#   llm-relay [port]           relay WSL 127.0.0.1:<port> to Windows localhost:<port> (default 1234)
+#   llm-relay --check [port]   send one request through the bridge and print the result
+#
+# Run it in a terminal tab while you use LM Studio; Ctrl+C stops it.
+#
+# Managed by chezmoi from chezmoi/dot_local/bin/executable_llm-relay; edit it there.
+# How it works (spec 8.2, ADR-013): socat listens on WSL's loopback only. Each
+# connection starts the inbox Windows PowerShell through WSL interop, which connects
+# to LM Studio on Windows' loopback and copies bytes both ways. LM Studio's "Serve on
+# Local Network" stays off and no Windows firewall rule is needed. A tested design
+# choice: the PowerShell command is passed by this script's --pump mode rather than on
+# socat's command line, because socat rejects an address that long.
+set -Eeuo pipefail
+
+PS_EXE="${LLM_RELAY_POWERSHELL:-/mnt/c/Windows/System32/WindowsPowerShell/v1.0/powershell.exe}"
+LOG="${XDG_STATE_HOME:-$HOME/.local/state}/llm-relay.log"
+
+die() {
+  printf 'llm-relay: %s\n' "$*" >&2
+  exit 1
+}
+
+usage() { sed -n '2,7s/^# \{0,1\}//p' "$0"; }
+
+# The port is interpolated into the PowerShell command, so only digits get through.
+valid_port() {
+  [[ "$1" =~ ^[0-9]{1,5}$ ]] && ((10#$1 >= 1 && 10#$1 <= 65535))
+}
+
+# The PowerShell bridge for one connection, as -EncodedCommand text (UTF-16LE base64).
+encoded_pump() {
+  local port=$1 script
+  script="\$ProgressPreference='SilentlyContinue';\$ErrorActionPreference='Stop';"
+  script+="\$c=New-Object Net.Sockets.TcpClient('localhost',$((10#$port)));\$n=\$c.GetStream();"
+  script+="\$i=[Console]::OpenStandardInput();\$o=[Console]::OpenStandardOutput();"
+  script+="\$null=\$i.CopyToAsync(\$n);\$n.CopyTo(\$o);\$o.Flush()"
+  printf '%s' "$script" | iconv -f UTF-8 -t UTF-16LE | base64 | tr -d '\n'
+}
+
+# stdin and stdout are one client connection (socat's EXEC).
+pump() {
+  local port=$1
+  mkdir -p "$(dirname "$LOG")"
+  exec "$PS_EXE" -NoLogo -NoProfile -NonInteractive -OutputFormat Text \
+    -EncodedCommand "$(encoded_pump "$port")" 2>>"$LOG"
+}
+
+check() {
+  local port=$1 status
+  mkdir -p "$(dirname "$LOG")"
+  : >"$LOG"
+  status="$(printf 'GET /v1/models HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n' |
+    (pump "$port") 2>/dev/null | head -n 1 | tr -d '\r' || true)"
+  if [[ "$status" == HTTP/* ]]; then
+    printf 'LM Studio answered on Windows localhost:%s: %s\n' "$port" "$status"
+    return 0
+  fi
+  if grep -q 'actively refused' "$LOG" 2>/dev/null; then
+    printf 'Nothing listens on Windows localhost:%s. Start the server in LM Studio (Developer tab).\n' "$port" >&2
+  else
+    printf 'No answer from Windows localhost:%s; details in %s\n' "$port" "$LOG" >&2
+  fi
+  return 1
+}
+
+serve() {
+  local port=$1 self
+  command -v socat >/dev/null 2>&1 || die "socat is not installed (it is in apt/base.list; run ./bootstrap apply)."
+  if ss -Hltn "sport = :$port" 2>/dev/null | grep -q .; then
+    die "port $port is already in use in WSL (is another llm-relay running?)."
+  fi
+  check "$port" || printf 'Starting anyway; requests will fail until LM Studio is serving.\n' >&2
+  self="$(readlink -f "$0")"
+  printf 'Relaying 127.0.0.1:%s (WSL) to localhost:%s (Windows). Ctrl+C to stop. Errors: %s\n' "$port" "$port" "$LOG"
+  exec socat TCP-LISTEN:"$port",bind=127.0.0.1,reuseaddr,fork EXEC:"$self --pump $port"
+}
+
+main() {
+  local mode=serve port=1234
+  case "${1:-}" in
+    -h | --help)
+      usage
+      return 0
+      ;;
+    --check)
+      mode=check
+      shift
+      ;;
+    --pump)
+      mode=pump
+      shift
+      ;;
+  esac
+  [[ $# -le 1 ]] || die "too many arguments; see llm-relay --help."
+  port="${1:-1234}"
+  valid_port "$port" || die "invalid port '$port' (1-65535)."
+  [[ -x "$PS_EXE" ]] || die "Windows PowerShell not found at $PS_EXE; llm-relay runs inside WSL only."
+  case "$mode" in
+    serve) serve "$port" ;;
+    check) check "$port" ;;
+    pump) pump "$port" ;;
+  esac
+}
+
+main "$@"

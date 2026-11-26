@@ -19,6 +19,7 @@ TESTS=(
   chezmoi-templates
   identity
   bootstrap
+  llm-relay
 )
 
 for test in "${TESTS[@]}"; do

@@ -173,3 +173,28 @@ key appears in both the Authentication and the Signing lists, identified by the
 those servers' `authorized_keys`. No other machine is affected and nothing needs rotating.
 Commits already signed by the revoked key remain in history; verify old ones locally
 with `git verify-commit` against an allowed_signers file that still lists the old key.
+
+## LM Studio from WSL: llm-relay
+
+1. On Windows, open LM Studio, load a model and switch the server on (Developer tab:
+   status **Running**, `Reachable at: http://127.0.0.1:1234`). Keep "Serve on Local
+   Network" off.
+2. In a WSL terminal tab: `llm-relay` (or `llm-relay <port>` for another port). It checks
+   that LM Studio answers, then relays until you press Ctrl+C.
+3. Point tools at `http://127.0.0.1:1234/v1` inside WSL.
+
+`llm-relay --check` sends one request and prints LM Studio's answer, or "Nothing listens on
+Windows localhost:1234" when the server is off. Errors from the Windows side are in
+`~/.local/state/llm-relay.log`. "port 1234 is already in use" means another `llm-relay`
+is running. See ADR-013.
+
+## Quick SSH: conn
+
+`conn` (`~/.local/bin`, the same script as on the Mac) is an fzf picker over the `Host`
+aliases in `~/.ssh/config.d/`: `conn` lists them, `conn web` connects straight away when
+one alias matches, `conn sftp` or `conn scp` switch mode, and `conn -n` prints the command
+instead of running it. `~/.ssh/config.d/` is deliberately not managed by this repository,
+so private hostnames never reach it: copy your host files there from the Mac (for example
+`scp mac:~/.ssh/config.d/* ~/.ssh/config.d/`). This machine has its own SSH key (see
+"Enrol this machine's SSH key"), so add its public key to each server's
+`~/.ssh/authorized_keys` before the first `conn`.

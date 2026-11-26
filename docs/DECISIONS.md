@@ -199,3 +199,29 @@ live on a Windows drive.
 file with `git config --file`, so a checkout owned by the Windows user cannot trip
 git's ownership check. Every other repository on `/mnt` still fails, including one with
 no origin and one whose name merely starts with `setup-dev-win`.
+
+## ADR-013: llm-relay, an on-demand bridge to LM Studio on Windows
+
+Status: accepted, 2026-11-26, after a manual test on the WSL acceptance machine.
+
+WSL in NAT mode cannot reach a Windows service bound to `127.0.0.1`, and LM Studio's
+server stays on Windows' loopback ("Serve on Local Network" off). `llm-relay`
+(`~/.local/bin`, from `chezmoi/dot_local/bin/executable_llm-relay`) bridges the two with
+nothing on a network interface: socat listens on WSL's `127.0.0.1:<port>` (default 1234)
+and, per connection, starts the inbox Windows PowerShell through WSL interop, which
+connects to `localhost:<port>` on Windows and copies bytes both ways. `localhost` covers a
+server bound to IPv4 or IPv6. The operator runs it in a terminal tab when needed (operator
+decision: on demand, not a service); `llm-relay --check` sends one request and says
+whether LM Studio answered.
+
+Facts from the test: socat rejects an address as long as an inline encoded PowerShell
+command, so socat runs this script's `--pump` mode instead; Windows PowerShell writes its
+progress and errors as CLIXML on stderr when redirected, so progress is silenced and
+errors go to `~/.local/state/llm-relay.log`. The port is checked to be digits in range,
+because it is interpolated into the PowerShell command.
+
+Rejected: WSL mirrored networking and LM Studio on all interfaces (ADR-006 and spec 8.2:
+both put services on the LAN); a systemd socket unit (more moving parts than the operator
+wanted for an on-demand tool; the same `--pump` mode would serve one later); `netsh
+portproxy` (flagged by setup-dev-win's posture report). A faster Windows half (a
+hash-pinned `ncat.exe`) is an option if PowerShell's per-connection start-up shows.
