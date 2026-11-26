@@ -14,12 +14,6 @@ phasing (section 9).
       mergetool and the editor fallback find `code` through the Windows PATH today, and
       would silently stop working. (The nvim clipboard bridge, ADR-015, already prefers
       absolute /mnt/c/Windows/System32 paths, so it is not affected.)
-- [ ] `cloud-gcp` profile via Google's signed apt repo (`google-cloud-cli`), with the
-      vendor-apt machinery of this milestone: `gcloud-cli` is a macOS-only cask in
-      homebrew-core (ADR-010). Record it as delivered in docs/DROPPED.md when done.
-- [ ] `azure-cli` in `cloud-azure` via Microsoft's signed apt repo, same machinery:
-      it is also a macOS-only cask in homebrew-core, so the profile carries only
-      `kubelogin` until then (ADR-010).
 - [ ] Vendor apt repositories with committed keys and `apt/pins.lock` (spec L1, not
       built in milestone 1). Each lands with the milestone that first needs it:
       Docker here, NVIDIA in L4, Anthropic in L5.

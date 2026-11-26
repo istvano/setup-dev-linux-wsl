@@ -420,14 +420,18 @@ assert_match '^brew "kubelogin"' "$ROOT/profiles/cloud-azure.Brewfile"
 assert_match '^brew "d2"' "$ROOT/profiles/docs.Brewfile"
 assert_match '^brew "pandoc"' "$ROOT/profiles/docs.Brewfile"
 # gcloud and azure-cli are macOS-only casks in homebrew-core: they must not appear as
-# formulae, and cloud-gcp must not exist until the vendor apt machinery does.
+# formulae. They come from signed vendor apt repositories (apt/vendor.list), selected
+# by the cloud-gcp and cloud-azure profiles.
 refute_match '^brew "(azure-cli|gcloud-cli|google-cloud-sdk)"' "$ROOT/profiles"
-[[ ! -e "$ROOT/profiles/cloud-gcp.Brewfile" ]] || {
-  echo 'cloud-gcp.Brewfile exists but is deferred to the vendor-apt milestone.' >&2
-  exit 1
-}
-assert_match 'cloud-gcp' "$ROOT/TASKS.md"
-assert_match 'azure-cli' "$ROOT/TASKS.md"
+assert_match '^google-cloud-cli +cloud-gcp ' "$ROOT/apt/vendor.list"
+assert_match '^azure-cli +cloud-azure ' "$ROOT/apt/vendor.list"
+for vendor_profile in runtime-docker ai-agents cloud-gcp gpu-nvidia; do
+  [[ -f "$ROOT/profiles/$vendor_profile.Brewfile" ]] || {
+    printf 'missing fragment for vendor-apt profile: %s\n' "$vendor_profile" >&2
+    exit 1
+  }
+  refute_match '^(brew|cask) ' "$ROOT/profiles/$vendor_profile.Brewfile"
+done
 
 # docs/DROPPED.md: one row per dropped tool, linked from the README and ARCHITECTURE.
 DROPPED="$ROOT/docs/DROPPED.md"

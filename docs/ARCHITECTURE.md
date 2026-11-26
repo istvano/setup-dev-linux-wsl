@@ -42,9 +42,13 @@ apply (ADR-015).
 ## Profiles
 
 Default: core, dev, security, kubernetes, backup. Opt-in: productivity-extra,
-security-scan, cloud, cloud-aws, cloud-azure, docs (ADR-010). Each is a
-`profiles/<name>.Brewfile` fragment of formulae only. `gcloud` and `azure-cli` are
-macOS-only casks in homebrew-core, so they wait for the vendor-apt milestone. Tools and
+security-scan, cloud, cloud-aws, cloud-azure, cloud-gcp, docs, runtime-docker,
+ai-agents, gpu-nvidia (ADR-010). Each is a `profiles/<name>.Brewfile` fragment of
+formulae only. `gcloud`, `azure-cli`, Docker Engine, Claude Code and the NVIDIA
+Container Toolkit come from signed vendor apt repositories (`apt/vendor.list`,
+`script/apt-vendor`), so the fragments of runtime-docker, ai-agents, cloud-gcp and
+gpu-nvidia are empty. runtime-docker and gpu-nvidia are refused on `--target wsl`
+until the WSL integration milestone. Tools and
 approaches that were considered and refused are recorded in [DROPPED.md](DROPPED.md).
 
 ## Execution boundaries

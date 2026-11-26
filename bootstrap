@@ -127,6 +127,18 @@ validate_profiles "$profiles"
 require_core_profile "$profiles"
 [[ "$shell_choice" == zsh || "$shell_choice" == fish ]] || die "Unknown --shell: $shell_choice (use zsh or fish)."
 
+# Docker Engine and the GPU stack inside WSL belong to the WSL integration milestone.
+# Refused with the guards (and again after a recorded list is adopted), never mid-run.
+require_target_profiles() {
+  local profile
+  [[ "$target" == wsl ]] || return 0
+  for profile in runtime-docker gpu-nvidia; do
+    [[ ",$profiles," != *",$profile,"* ]] ||
+      die "$profile is for --target linux for now; Docker and GPU inside WSL arrive with the WSL integration milestone (TASKS.md)."
+  done
+}
+require_target_profiles
+
 CHEZMOI_CONFIG="$(chezmoi_config_path)"
 
 # Homebrew's bin (chezmoi lives there) when installed; absent is normal before step 2.
@@ -177,6 +189,7 @@ reconcile_with_chezmoi_data() {
   fi
   validate_profiles "$profiles"
   require_core_profile "$profiles"
+  require_target_profiles
   recorded=1
   log "Using the profiles, shell and identity recorded in $CHEZMOI_CONFIG."
 }
