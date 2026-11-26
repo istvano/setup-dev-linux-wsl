@@ -42,8 +42,56 @@ in `~/.config/chezmoi/chezmoi.toml` and never asked again.
 The profile list must include `core` (it provides chezmoi, mise and uv); bootstrap
 refuses a list without it before any step.
 
-`apply` runs, in order: apt base packages, Homebrew (a pinned clone, never a
-downloaded script), the profile packages, chezmoi, then `script/verify`.
+`apply` runs, in order: apt base packages, the removal of `docker.io` and
+`podman-docker` (only with `runtime-docker`), signed vendor apt repositories and their
+packages, the rest of the Docker setup (only with `runtime-docker`), Homebrew (a pinned
+clone, never a downloaded script), the profile packages, chezmoi, then `script/verify`.
+
+### Vendor apt profiles and Docker
+
+Opt in with `--profiles`, for example
+`./bootstrap apply --target linux --profiles core,dev,runtime-docker,ai-agents`.
+
+| Profile | Gives you | Targets |
+|---|---|---|
+| `runtime-docker` | Docker Engine, buildx and compose | linux only |
+| `gpu-nvidia` | NVIDIA Container Toolkit | linux only |
+| `ai-agents` | Claude Code (`claude-code`) | linux, wsl |
+| `cloud-gcp` | `google-cloud-cli` | linux, wsl |
+| `cloud-azure` | `azure-cli` and kubelogin | linux, wsl |
+
+`runtime-docker` and `gpu-nvidia` are refused on `--target wsl` until the WSL milestone.
+
+Docker on the linux target, and what to know before using it:
+
+- You are added to the `docker` group, which is root-equivalent: anyone in it can mount
+  the host filesystem into a container. It takes effect at your next login; until then
+  `docker` needs `sudo`.
+- Published ports are reachable from the network (operator decision, ADR-016). UFW does
+  not filter them, because Docker writes its own iptables rules. Bind a port to
+  `127.0.0.1` in the project's compose file (`127.0.0.1:8080:80`) when it must stay
+  local.
+- `/etc/docker/daemon.json` is replaced with `{"log-driver": "local"}`. The previous file
+  is kept as `daemon.json.backup.<UTC timestamp>`, and a running docker is restarted,
+  which stops its containers.
+
+Check the vendor sources without changing anything:
+
+```bash
+./script/apt-vendor --profiles core,runtime-docker --target linux --check
+./script/docker-setup --profiles core,runtime-docker --check
+```
+
+Both exit 1 and print each drift (missing or changed keyring or source, a missing
+package, an installed conflict, dockerd not enabled or active, you not in the group).
+`./script/verify` runs them for the recorded profiles. The keyrings are
+`/etc/apt/keyrings/<key>.asc` and the sources `/etc/apt/sources.list.d/<id>.sources`.
+
+If `apt-vendor` stops with "Conflicting APT sources found", another file already
+configures that URI with a different `Signed-By` (typically a vendor's own `.list` or
+`.sources`). Nothing was written. Remove or rename the file it names, then re-run; the
+script never deletes files it did not write. To update a vendor package use
+`sudo apt-get update && sudo apt-get upgrade`; the repositories are unpinned (ADR-011).
 
 ### After the first apply: two steps you run yourself
 

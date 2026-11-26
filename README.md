@@ -64,6 +64,7 @@ proxy file) and the oh-my-zsh git shortcuts (`gst`, `gco`, ...). See OPERATIONS.
 | runtime-docker | no | Docker Engine from Docker's signed apt repository, rootful under systemd, you in the root-equivalent `docker` group, `daemon.json` log driver `local`; removes `docker.io` and `podman-docker` first (`script/docker-setup`; `--target linux` only for now) |
 | ai-agents | no | Claude Code from Anthropic's signed apt repository |
 | gpu-nvidia | no | NVIDIA Container Toolkit from NVIDIA's signed apt repository (`--target linux` only for now) |
+
 ## Documentation
 
 - [Architecture](docs/ARCHITECTURE.md)

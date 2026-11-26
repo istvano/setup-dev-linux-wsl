@@ -20,7 +20,8 @@ machine or VM (`--target linux`). Nothing else is supported.
 
 `./bootstrap plan|apply` runs the guards (bash 5, not root, x86_64, Ubuntu 26.04,
 target, profiles including `core`) before any step, then `script/apt-base`,
-`script/apt-vendor`, `script/install-homebrew`, `script/packages`, chezmoi and `script/verify`. On a first
+`script/docker-setup --remove-conflicts` (runtime-docker only), `script/apt-vendor`,
+`script/docker-setup` (runtime-docker only), `script/install-homebrew`, `script/packages`, chezmoi and `script/verify`. On a first
 run chezmoi is run as `chezmoi init --source <repo>/chezmoi` with
 `--promptMultichoice`, `--promptChoice` and `--promptString` (keyed by prompt text)
 so its data matches what packages installed. Once `~/.config/chezmoi/chezmoi.toml`
@@ -48,7 +49,8 @@ formulae only. `gcloud`, `azure-cli`, Docker Engine, Claude Code and the NVIDIA
 Container Toolkit come from signed vendor apt repositories (`apt/vendor.list`,
 `script/apt-vendor`), so the fragments of runtime-docker, ai-agents, cloud-gcp and
 gpu-nvidia are empty. runtime-docker and gpu-nvidia are refused on `--target wsl`
-until the WSL integration milestone. Tools and
+until the WSL integration milestone. On the linux target Docker's published ports are
+reachable from the network by operator decision (ADR-016). Tools and
 approaches that were considered and refused are recorded in [DROPPED.md](DROPPED.md).
 
 ## Execution boundaries
