@@ -183,3 +183,19 @@ install different toolchains, and a new release can break a project until it is
 checked. mise still verifies checksums where the backend supports it; the aqua codex
 entry declares none (ADR-009, TASKS.md). CI's own tools and GitHub Actions remain
 pinned.
+
+## ADR-012: The Windows host repository is exempt from the /mnt check
+
+Status: accepted. From the first real WSL run (setup-dev-win milestone 1 acceptance).
+
+On the `wsl` target `script/verify` fails when it finds git repositories under `/mnt`,
+because checkouts on the Windows drives are slow and get the wrong permissions and line
+endings. The first end-to-end run failed only that check, on the setup-dev-win checkout
+that had just driven the install: that repository runs from Windows PowerShell and must
+live on a Windows drive.
+
+`repos_under_mnt` skips a repository whose `remote.origin.url`, without a trailing
+`.git` or `/`, ends in `/setup-dev-win`. The URL is read from the repository's config
+file with `git config --file`, so a checkout owned by the Windows user cannot trip
+git's ownership check. Every other repository on `/mnt` still fails, including one with
+no origin and one whose name merely starts with `setup-dev-win`.

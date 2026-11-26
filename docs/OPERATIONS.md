@@ -62,7 +62,8 @@ rest. Values must not contain `,`, `=` or `"` (chezmoi's prompt flags cannot car
 them); bootstrap refuses them. A name that needs one of them can be entered at the
 interactive prompt instead, or edited into `[data] gitName` afterwards: re-runs never
 pass the recorded name back through those flags. Keep checkouts in the Linux filesystem: `script/verify`
-fails if it finds git repositories under `/mnt`.
+fails if it finds git repositories under `/mnt`. The one exception is the Windows host
+repository (origin ending in `/setup-dev-win`), which has to live on Windows (ADR-012).
 
 ## Re-running safely
 

@@ -146,12 +146,21 @@ require_not_root() {
 
 # Print any .git directories under MNT_ROOT/* (default /mnt, the Windows drives under
 # WSL) to depth 4. Repos on /mnt are slow and have the wrong permissions and line
-# endings; verify reports them.
+# endings; verify reports them. One repository is exempt: the companion Windows host
+# repository (origin ending in /setup-dev-win), which runs from Windows and must live
+# there (ADR-012). Its origin is read from the config file, not with git, so a
+# checkout owned by another user ("dubious ownership") cannot hide or break the check.
 repos_under_mnt() {
-  local root="${MNT_ROOT:-/mnt}" dir
+  local root="${MNT_ROOT:-/mnt}" dir gitdir origin
   for dir in "$root"/*; do
     [[ -d "$dir" ]] || continue
-    find "$dir" -maxdepth 4 -type d -name .git 2>/dev/null || true
+    while IFS= read -r gitdir; do
+      origin="$(git config --file "$gitdir/config" --get remote.origin.url 2>/dev/null || true)"
+      origin="${origin%/}"
+      origin="${origin%.git}"
+      [[ "$origin" == */setup-dev-win ]] && continue
+      printf '%s\n' "$gitdir"
+    done < <(find "$dir" -maxdepth 4 -type d -name .git 2>/dev/null || true)
   done
 }
 
