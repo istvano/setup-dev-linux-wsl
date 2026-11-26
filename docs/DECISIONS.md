@@ -163,9 +163,9 @@ CLIs to exact versions, so a fresh setup installed software that was already beh
 Decision: the setup installs the LATEST STABLE version of every component. In the mise
 config, `node = "lts"` (Node's recommended line), `rust = "stable"` (rustup's channel)
 and `"latest"` for go, pnpm, python, maven, gradle, kotlin, `"npm:cline"` and
-`"aqua:openai/codex"`. Java keeps three LTS major lines side by side (temurin 21, 17
-and 25, each resolving to its latest patch) because a JDK major is a compatibility
-boundary. `tests/placement-policy.sh` asserts that every `[tools]` entry is one of
+`"aqua:openai/codex"`. Java keeps three LTS major lines side by side (temurin 25 as the
+default, then 21 and 17, each resolving to its latest patch) because a JDK major is a
+compatibility boundary; 25 became the default by operator decision on 2026-11-26. `tests/placement-policy.sh` asserts that every `[tools]` entry is one of
 those spellings and that no tool carries a hard-coded patch version. Prereleases:
 checked 2026-11-25 with `mise latest` and `mise ls-remote`; the python core plugin
 hides alphas, the npm backend skips nightly dist-tags and the aqua backend lists
@@ -225,3 +225,34 @@ both put services on the LAN); a systemd socket unit (more moving parts than the
 wanted for an on-demand tool; the same `--pump` mode would serve one later); `netsh
 portproxy` (flagged by setup-dev-win's posture report). A faster Windows half (a
 hash-pinned `ncat.exe`) is an option if PowerShell's per-connection start-up shows.
+
+## ADR-014: Settings carried over from setup-dev-linux
+
+Status: accepted, 2026-11-26, after a settings comparison with the operator's previous
+Linux repository (istvano/setup-dev-linux), desktop elements excluded.
+
+The operator chose to carry over:
+
+- **proxyon / proxyoff** (old D012: keep). `~/.config/zsh/proxy.zsh` and
+  `~/.config/fish/functions/proxy{on,off}.fish` export `http_proxy`, `https_proxy`,
+  `all_proxy` and `no_proxy` in both cases and restore the previous values, unset state and
+  export attributes. The values come from a private, unmanaged file
+  (`~/.config/proxy/proxy.local.json`, or `$PROXY_SETTINGS`) read by `proxy-settings`, a
+  bash and jq port of the old Python reader with the same rules: regular file, owned by the
+  user, mode without group or other access, at most 64 KiB, exactly the four string keys,
+  http/https/socks5/socks5h URLs with a host, no control characters or duplicate keys.
+  Values are never evaluated.
+- **Git shortcuts** (old D012: keep "git"). oh-my-zsh stays dropped; its everyday git
+  aliases (`gst`, `gco`, `gcb`, `gd`, `gl`, `gp`, `gpf`, `glog`, `grbi` and others, 21 in
+  all) come back as zsh aliases and fish abbreviations, kept identical by a test.
+- **Java 25 as the default** (old D011): `java = ["temurin-25", "temurin-21",
+  "temurin-17"]` (ADR-011 updated).
+
+Also fixed: `dot_gitconfig.tmpl` pointed `core.excludesfile` at `~/.config/git/ignore`,
+which the port from setup-dev-mac had not shipped; `chezmoi/dot_config/git/ignore` now
+exists.
+
+Not carried over, by operator choice on 2026-11-26: WSL-side VS Code extensions and a
+"moving in" runbook (credential restore, `~/.ssh/config.d` host blocks, private
+`.npmrc`), together with `CLINE_NO_AUTO_UPDATE` and `UV_PYTHON_DOWNLOADS`. kubectl keeps
+following Homebrew's latest; pin it with mise if clusters fall more than one minor behind.

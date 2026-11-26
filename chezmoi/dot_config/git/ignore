@@ -1,0 +1,45 @@
+# Global gitignore, referenced by core.excludesfile (dot_gitconfig.tmpl).
+#
+# These belong to the machine, not to any repository, so they are excluded once
+# here rather than repeated in every project's .gitignore. Ported from setup-dev-mac.
+
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+.Spotlight-V100
+.Trashes
+
+.idea/
+.vscode/settings.local.json
+*.swp
+*.swo
+
+.direnv/
+.venv/
+__pycache__/
+
+# AI agent state, which lands in whatever repository you happen to be working in.
+#
+# This machine installs three coding agents (claude-code, codex and opencode via the dev
+# profile), and each writes its own directory into the working tree. They hold local
+# session state and settings, not project configuration, so they belong to the machine —
+# which is what this file is for.
+#
+# A project that genuinely wants to COMMIT one of these, to share agent instructions with a
+# team, negates it there: `!.claude/` in the project's own .gitignore, or `git add -f`.
+.claude/
+.cursor/
+.aider*
+.opencode/
+
+# Local secrets must never be staged by accident.
+.env
+.env.*
+!.env.example
+
+# These also hide legitimate files: a public certificate, or a test fixture.
+# That is the intended trade — a silent skip is better than a leaked key — but
+# when a match really should be committed, use `git add -f <path>`.
+*.pem
+*.key

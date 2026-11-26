@@ -22,13 +22,12 @@ python = "latest"
 # SDKMAN was considered and rejected: it needs a download-and-run installer that edits
 # the shell rc files chezmoi owns, and mise covers the same ground.
 #
-# Three LTS major lines are kept side by side, each resolving to its latest patch: 21 is
-# the default because it is first, 17 stays because Couchbase SDK and connector work
-# still spans it, and 25 is the newest LTS, APPENDED so that mise (which takes the first
-# entry as the default) does not move projects onto it unasked. `mise use
-# java@temurin-25` in a project selects it. Major lines are not "latest": a JDK major is
-# a compatibility boundary, not a patch.
-java = ["temurin-21", "temurin-17", "temurin-25"]
+# Three LTS major lines are kept side by side, each resolving to its latest patch. 25, the
+# newest LTS, is the default because it is first (operator decision, as in setup-dev-linux
+# D011); 21 and 17 stay for projects that need them (17: Couchbase SDK and connector
+# work). `mise use java@temurin-21` in a project selects another line. Major lines are not
+# "latest": a JDK major is a compatibility boundary, not a patch.
+java = ["temurin-25", "temurin-21", "temurin-17"]
 maven = "latest"
 gradle = "latest"
 kotlin = "latest"

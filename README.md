@@ -42,8 +42,8 @@ Details: [docs/OPERATIONS.md](docs/OPERATIONS.md), "After the first apply".
 
 Two commands in `~/.local/bin`: `conn` picks an SSH host from `~/.ssh/config.d/` and
 connects; `llm-relay` (WSL) makes LM Studio on Windows reachable at
-`http://127.0.0.1:1234/v1` while it runs. See OPERATIONS, "Quick SSH: conn" and
-"LM Studio from WSL: llm-relay".
+`http://127.0.0.1:1234/v1` while it runs. Shell helpers: `proxyon`/`proxyoff` (private
+proxy file) and the oh-my-zsh git shortcuts (`gst`, `gco`, ...). See OPERATIONS.
 
 ## Profiles
 
