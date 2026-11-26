@@ -118,7 +118,7 @@ jobs:
             out="$(mktemp)"
             trap "rm -f \"$out\"" EXIT
             ./script/render-brewfile \
-              --profiles core,dev,security,kubernetes,backup,productivity-extra,security-scan,cloud,cloud-aws,cloud-azure,docs \
+              --profiles core,dev,security,kubernetes,backup,productivity-extra,security-scan,cloud,cloud-aws,cloud-azure,cloud-gcp,runtime-docker,ai-agents,gpu-nvidia,docs \
               --shell fish --output "$out"
             mapfile -t formulae < <(sed -nE "s/^brew \"([^\"]+)\".*/\1/p" "$out")
             echo "${#formulae[@]} formulae to check"

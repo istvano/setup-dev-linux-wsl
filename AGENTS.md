@@ -25,8 +25,8 @@ These are deliberate defaults, not placeholders:
   different Ubuntu releases are never mixed (ADR-002).
 - Never write a capability claim that is true of only one target. Detect it rather
   than remember it, and report accordingly.
-- Package layers (ADR-003): apt for the base (and, in a later milestone, vendor
-  repos), Homebrew on Linux for CLI tools, mise for language runtimes, uv for Python.
+- Package layers (ADR-003): apt for the base and for signed vendor repos
+  (`script/apt-vendor`, ADR-016), Homebrew on Linux for CLI tools, mise for language runtimes, uv for Python.
   The profile list always includes `core`, which provides chezmoi, mise and uv.
 - Homebrew is installed by `git clone` at a pinned tag and commit, with no install
   script (ADR-004).
@@ -41,7 +41,8 @@ These are deliberate defaults, not placeholders:
   productivity-extra.
 - Stateful services belong to the project that owns them, in containers. The
   repository owns only stateless substrate.
-- Every container port the repository publishes binds `127.0.0.1`.
+- Every container port the repository publishes binds `127.0.0.1`, except Docker on
+  `--target linux`, where published ports are reachable by operator decision (ADR-016).
 - Exploit development, malware analysis and untrusted binaries belong in an
   isolated VM, not in this environment.
 
@@ -60,8 +61,9 @@ host capability. Do not install a daemon natively merely because a package exist
 ## Sources of truth
 
 - `profiles/*.Brewfile`: Homebrew-on-Linux profiles (formulae only).
-- `apt/`: the base package list (`base.list`). Vendor repo `.sources`, committed
-  keys and `pins.lock` are future work (a later milestone) and do not exist yet.
+- `apt/`: the base package list (`base.list`), the vendor repository catalogue
+  (`vendor.list`) and its committed keys (`keys/*.asc`), applied by `script/apt-vendor`.
+  `pins.lock` is not used: vendor packages are unpinned (ADR-011).
 - `homebrew/brew.lock`: the pinned Homebrew tag and commit (ADR-004).
 - `chezmoi/`: user configuration and idempotent apply hooks.
 - `mcp/`: the approved MCP policy catalogue. Future work; it does not exist yet.
@@ -157,7 +159,8 @@ requires bash 5 and refuses to run under anything older.
 
 Do not weaken these without explicit operator approval and a documented decision:
 
-- Container ports bind to `127.0.0.1` by default.
+- Container ports bind to `127.0.0.1` by default, except Docker on `--target linux`,
+  where published ports are reachable by operator decision (ADR-016).
 - No general-purpose container mounts `/var/run/docker.sock`.
 - No container receives the whole home directory, the SSH directory or all cloud
   credentials.

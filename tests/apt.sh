@@ -18,7 +18,9 @@ while IFS= read -r line; do
 done <"$ROOT/apt/base.list"
 
 # Containers own docker; the NVIDIA driver belongs to the Windows host or the distro.
-refute_match '^(docker\.io|podman-docker|cuda-drivers|nvidia-[a-z0-9-]+)[[:space:]]' "$ROOT/apt"
+# The vendor catalogue may carry nvidia-container-toolkit (gpu-nvidia, ADR-003) but never a driver.
+refute_match '^(docker\.io|podman-docker|cuda-drivers|nvidia-[a-z0-9-]+)[[:space:]]' "$ROOT/apt/base.list"
+refute_match '(^|,)(docker\.io|podman-docker|cuda-drivers|nvidia-driver[a-z0-9-]*)(,|[[:space:]]|$)' "$ROOT/apt/vendor.list"
 
 [[ -x "$ROOT/script/apt-base" ]] || fail "script/apt-base is missing or not executable"
 

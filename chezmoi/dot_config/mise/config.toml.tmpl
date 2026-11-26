@@ -48,4 +48,8 @@ rust = "stable"
 # checksum or attestation, so the archive is trusted on GitHub's TLS alone (TASKS.md).
 # See ADR-009 and ADR-011.
 "aqua:openai/codex" = "latest"
+# GitHub Copilot CLI. Same reasoning as cline: the npm: backend keeps it beside the Node
+# version that runs it instead of under a global prefix that vanishes at the next bump.
+# Authentication is the operator's own (`copilot` then /login); nothing is stored here.
+"npm:@github/copilot" = "latest"
 {{- end }}

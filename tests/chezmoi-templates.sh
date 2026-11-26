@@ -369,6 +369,7 @@ refute_match 'mise exec' "$TMP/telemetry.code"
   exit 1
 }
 assert_match 'mise which go' "$TMP/telemetry.sh"
+assert_match 'gcloud config set disable_usage_reporting true' "$TMP/telemetry.sh"
 assert_match 'uv tool install' "$TMP/uvtools.sh"
 refute_match 'aider-chat==' "$TMP/uvtools.sh" # ADR-011: latest stable, no pin (comments say so without the spelling)
 

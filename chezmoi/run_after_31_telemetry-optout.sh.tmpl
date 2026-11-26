@@ -1,12 +1,11 @@
 #!/usr/bin/env bash
-# Turn off the telemetry that no environment variable can reach (ADR-006, ADR-015).
+# Turn off the telemetry that no environment variable can reach (ADR-006, ADR-015, ADR-016).
 #
-# Most opt-outs live in the shell configuration as environment variables. These two have
+# Most opt-outs live in the shell configuration as environment variables. These three have
 # none: each is a setting the tool writes into its own config file, so it has to be set
-# once, per machine, by running the tool. Ported from setup-dev-mac's hook 31, minus
-# gcloud, which this repository does not install yet.
+# once, per machine, by running the tool. Ported from setup-dev-mac's hook 31.
 #
-# Settings: {{ range $i, $s := (list "go-telemetry-off" "aider-analytics-disable") }}{{ if $i }} {{ end }}{{ $s }}{{ end }}
+# Settings: {{ range $i, $s := (list "go-telemetry-off" "gcloud-disable-usage-reporting" "aider-analytics-disable") }}{{ if $i }} {{ end }}{{ $s }}{{ end }}
 #
 # This is run_after_, not run_onchange_, on purpose (ADR-015). The hook exits 0 even when a
 # step fails, and chezmoi records a run_onchange_ script as done on exit 0, so an offline
@@ -41,6 +40,18 @@ if [[ -n "$go_bin" ]] && "$go_bin" telemetry >/dev/null 2>&1; then
   if [[ "$("$go_bin" telemetry 2>/dev/null)" != "off" ]]; then
     echo "[INFO] Disabling Go telemetry collection." >&2
     "$go_bin" telemetry off || echo "[WARN] Could not set Go telemetry to off." >&2
+  fi
+fi
+
+# gcloud (cloud-gcp profile, from apt) reports usage only if you opted in at install time,
+# so this is defensive: an installer question answered once is not a decision anyone
+# remembers. `gcloud config set disable_usage_reporting true` is the verified opt-out
+# setup-dev-mac uses. A no-op when already set; skipped when gcloud is not installed.
+if command -v gcloud >/dev/null 2>&1; then
+  if [[ "$(gcloud config get-value disable_usage_reporting 2>/dev/null)" != "True" ]]; then
+    echo "[INFO] Disabling gcloud usage reporting." >&2
+    gcloud config set disable_usage_reporting true >/dev/null 2>&1 ||
+      echo "[WARN] Could not disable gcloud usage reporting." >&2
   fi
 fi
 

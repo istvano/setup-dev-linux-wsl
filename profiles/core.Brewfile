@@ -27,6 +27,8 @@ brew "just"      # Thin command runner for repository workflows.
 # interactive API work, which is a daily task here. Two clients, deliberately.
 brew "xh"        # Ergonomic HTTP client for talking to remote APIs by hand.
 brew "trash-cli" # Moves files to the freedesktop Trash instead of unlinking them.
+brew "fastfetch" # System information summary.
+brew "midnight-commander"  # Two-pane terminal file manager (mc).
 # Model repositories use Git LFS (Hugging Face stores weights in it); cloning one
 # without it silently yields pointer files instead of weights.
 brew "git-lfs"   # Large-file storage, used by model repositories.

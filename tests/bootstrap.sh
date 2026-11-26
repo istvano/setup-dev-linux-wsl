@@ -72,6 +72,39 @@ refuse "--non-interactive with only a name" "--git-name and --git-email" \
   plan --non-interactive --git-name T
 refuse "option swallowed as a value" "requires a value" plan --profiles --shell fish
 
+# runtime-docker and gpu-nvidia are linux-target only for now: refused on --target wsl
+# with the milestone message, by the guards, before any step is printed or run.
+bs_wsl() {
+  env -u XDG_CONFIG_HOME HOME="$HOME_T" WSL_DISTRO_NAME=test OS_RELEASE_FILE="$FX/os-release/ubuntu-26.04" UNAME_M=x86_64 \
+    KERNEL_OSRELEASE_FILE="$FX/osrelease/wsl" "$B" "$@"
+}
+for prof in runtime-docker gpu-nvidia; do
+  for mode in plan apply; do
+    rc=0
+    out="$(bs_wsl "$mode" --target wsl --profiles "core,$prof" 2>&1)" || rc=$?
+    [[ "$rc" -ne 0 ]] || {
+      printf '%s --profiles core,%s on wsl must fail\n' "$mode" "$prof" >&2
+      exit 1
+    }
+    [[ "$out" == *"$prof is for --target linux for now; Docker and GPU inside WSL arrive with the WSL integration milestone (TASKS.md)."* ]] || {
+      printf 'wrong refusal for %s on wsl: %s\n' "$prof" "$out" >&2
+      exit 1
+    }
+    [[ "$out" != *"==> Step"* ]] || {
+      printf 'a step ran before the %s refusal: %s\n' "$prof" "$out" >&2
+      exit 1
+    }
+  done
+done
+# The other new profiles are accepted on wsl: the refusal there is only for those two.
+for prof in ai-agents cloud-gcp cloud-azure; do
+  out="$(bs_wsl plan --target wsl --profiles "core,$prof" 2>&1 || true)"
+  [[ "$out" != *"is for --target linux"* ]] || {
+    printf '%s must not be refused on wsl\n' "$prof" >&2
+    exit 1
+  }
+done
+
 # chezmoi's --promptString is a comma-separated key=value list, so a comma or '='
 # in a value would be mangled into another key. Reject, naming the problem.
 for bad in 'A,B' 'A=B' 'A"B'; do
@@ -135,7 +168,7 @@ if command -v chezmoi >/dev/null 2>&1; then
   cp "$B" "$rerun_tree/bootstrap"
   cp -R "$ROOT/script/lib" "$rerun_tree/script/lib"
   cp -R "$ROOT/chezmoi" "$rerun_tree/chezmoi"
-  for stub in apt-base install-homebrew packages verify; do
+  for stub in apt-base apt-vendor docker-setup install-homebrew packages verify; do
     printf '#!/usr/bin/env bash\nexit 0\n' >"$rerun_tree/script/$stub"
     chmod +x "$rerun_tree/script/$stub"
   done
@@ -258,6 +291,9 @@ for pattern in \
   '^[[:space:]]*require_target ' \
   '^[[:space:]]*validate_profiles ' \
   'run_step .*script/apt-base' \
+  'run_step "docker conflicts"' \
+  'run_step .*script/apt-vendor' \
+  'run_step "Docker Engine"' \
   'run_step .*script/install-homebrew' \
   'run_step .*script/packages' \
   'apply_chezmoi$' \

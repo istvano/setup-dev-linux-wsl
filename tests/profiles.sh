@@ -56,4 +56,17 @@ for profile in "${VALID_PROFILES[@]}"; do
   assert_match "^\\| $profile \\|" "$ROOT/README.md"
 done
 
+# The vendor-apt profiles are valid, and every profile apt/vendor.list names is valid
+# (script/apt-vendor does not validate names; bootstrap does).
+for profile in runtime-docker ai-agents cloud-gcp gpu-nvidia cloud-azure; do
+  validate_profiles "core,$profile" || fail "$profile must be a valid profile"
+  [[ ",$DEFAULT_PROFILES," != *",$profile,"* ]] || fail "$profile must be opt-in"
+done
+while IFS=$' \t' read -r _id vprofile _rest; do
+  [[ -z "$_id" || "$_id" == '#'* ]] && continue
+  found=false
+  for profile in "${VALID_PROFILES[@]}"; do [[ "$profile" == "$vprofile" ]] && found=true; done
+  [[ "$found" == true ]] || fail "apt/vendor.list names an unknown profile: $vprofile"
+done <"$ROOT/apt/vendor.list"
+
 echo 'profile catalogue tests passed.'

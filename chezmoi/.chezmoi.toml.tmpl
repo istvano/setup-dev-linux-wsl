@@ -6,7 +6,7 @@
 {{- $workGitEmail := promptStringOnce . "workGitEmail" "Git user.email inside that directory (empty to disable the split)" "" -}}
 {{- /* Keep this list identical to VALID_PROFILES in script/lib/profiles.sh, and the
        default identical to DEFAULT_PROFILES; tests/profiles.sh compares them. */ -}}
-{{- $profileChoices := list "core" "dev" "security" "kubernetes" "backup" "productivity-extra" "security-scan" "cloud" "cloud-aws" "cloud-azure" "docs" -}}
+{{- $profileChoices := list "core" "dev" "security" "kubernetes" "backup" "productivity-extra" "security-scan" "cloud" "cloud-aws" "cloud-azure" "cloud-gcp" "docs" "runtime-docker" "ai-agents" "gpu-nvidia" -}}
 {{- $profiles := promptMultichoiceOnce . "profiles" "Workstation profiles" $profileChoices (list "core" "dev" "security" "kubernetes" "backup") -}}
 {{- $shell := promptChoiceOnce . "shell" "Interactive shell (never changes the account login shell)" (list "zsh" "fish") "zsh" -}}
 {{- /* target is detected, never asked. WSL2 kernels report "...microsoft-standard-WSL2"

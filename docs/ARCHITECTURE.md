@@ -9,8 +9,9 @@ machine or VM (`--target linux`). Nothing else is supported.
 
 ## Layers
 
-1. apt: a small base set (`apt/base.list`). Vendor repos with committed keys arrive in
-   a later milestone.
+1. apt: a small base set (`apt/base.list`). Signed vendor repos (committed keys,
+   `apt/vendor.list`, deb822 sources) are applied per profile and target by
+   `script/apt-vendor`.
 2. Homebrew on Linux: CLI tools, from rendered profile Brewfiles.
 3. mise: language runtimes at the latest stable version (node LTS, Java LTS lines; ADR-011); uv for Python.
 4. chezmoi: dotfiles, rooted at `chezmoi/` through `.chezmoiroot`.
@@ -19,7 +20,8 @@ machine or VM (`--target linux`). Nothing else is supported.
 
 `./bootstrap plan|apply` runs the guards (bash 5, not root, x86_64, Ubuntu 26.04,
 target, profiles including `core`) before any step, then `script/apt-base`,
-`script/install-homebrew`, `script/packages`, chezmoi and `script/verify`. On a first
+`script/docker-setup --remove-conflicts` (runtime-docker only), `script/apt-vendor`,
+`script/docker-setup` (runtime-docker only), `script/install-homebrew`, `script/packages`, chezmoi and `script/verify`. On a first
 run chezmoi is run as `chezmoi init --source <repo>/chezmoi` with
 `--promptMultichoice`, `--promptChoice` and `--promptString` (keyed by prompt text)
 so its data matches what packages installed. Once `~/.config/chezmoi/chezmoi.toml`
@@ -41,9 +43,15 @@ apply (ADR-015).
 ## Profiles
 
 Default: core, dev, security, kubernetes, backup. Opt-in: productivity-extra,
-security-scan, cloud, cloud-aws, cloud-azure, docs (ADR-010). Each is a
-`profiles/<name>.Brewfile` fragment of formulae only. `gcloud` and `azure-cli` are
-macOS-only casks in homebrew-core, so they wait for the vendor-apt milestone. Tools and
+security-scan, cloud, cloud-aws, cloud-azure, cloud-gcp, docs, runtime-docker,
+ai-agents, gpu-nvidia (ADR-010). Each is a `profiles/<name>.Brewfile` fragment of
+formulae only. `gcloud`, `azure-cli`, Docker Engine, Claude Code and the NVIDIA
+Container Toolkit come from signed vendor apt repositories (`apt/vendor.list`,
+`script/apt-vendor`), so the fragments of runtime-docker, ai-agents, cloud-gcp and
+gpu-nvidia are empty, except that runtime-docker carries one formula, `skopeo` (a
+daemonless registry client). runtime-docker and gpu-nvidia are refused on `--target wsl`
+until the WSL integration milestone. On the linux target Docker's published ports are
+reachable from the network by operator decision (ADR-016). Tools and
 approaches that were considered and refused are recorded in [DROPPED.md](DROPPED.md).
 
 ## Execution boundaries

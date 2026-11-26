@@ -14,25 +14,21 @@ phasing (section 9).
       mergetool and the editor fallback find `code` through the Windows PATH today, and
       would silently stop working. (The nvim clipboard bridge, ADR-015, already prefers
       absolute /mnt/c/Windows/System32 paths, so it is not affected.)
-- [ ] `cloud-gcp` profile via Google's signed apt repo (`google-cloud-cli`), with the
-      vendor-apt machinery of this milestone: `gcloud-cli` is a macOS-only cask in
-      homebrew-core (ADR-010). Record it as delivered in docs/DROPPED.md when done.
-- [ ] `azure-cli` in `cloud-azure` via Microsoft's signed apt repo, same machinery:
-      it is also a macOS-only cask in homebrew-core, so the profile carries only
-      `kubelogin` until then (ADR-010).
-- [ ] Vendor apt repositories with committed keys and `apt/pins.lock` (spec L1, not
-      built in milestone 1). Each lands with the milestone that first needs it:
-      Docker here, NVIDIA in L4, Anthropic in L5.
+- [ ] Docker inside WSL (the `runtime-docker` profile is refused on `--target wsl`),
+      with the loopback-only `daemon.json` that target will want. The vendor apt
+      machinery, the Docker packages and the linux-target setup are done (ADR-016).
 
 ## Milestone 3
 
-- [ ] L4: `gpu-nvidia` profile and `gpu-check`. Done when an eGPU present and absent
-      are both handled.
+- [ ] L4: `gpu-check` and the CUDA toolkit. The `gpu-nvidia` profile (NVIDIA Container
+      Toolkit, linux target) exists; done when an eGPU present and absent are both
+      handled.
 
 ## Milestone 4
 
-- [ ] L5: AI agents and policy, including the `mcp/` catalogue. Done when the agents
-      run with policy applied.
+- [ ] L5: managed agent policy, including the `mcp/` catalogue. Claude Code installs
+      from Anthropic's apt repository (`ai-agents`, ADR-016); done when the agents run
+      with policy applied.
 
 ## Milestone 5
 
@@ -41,6 +37,10 @@ phasing (section 9).
 - [ ] W7 (both repositories): the LM Studio bridge, `local-llm` profile (spec 8.2).
 
 ## Milestone 1 follow-ups
+
+- [ ] Telemetry audit of GitHub Copilot CLI (ADR-016 item 11): find a documented,
+      verified opt-out, then set it in the shell and record it in ADR-006, or record that
+      none exists.
 
 - [ ] Align host and CI linter versions. shfmt is pinned v3.13.1 in CI but floats with
       Homebrew on the host; shellcheck is apt 0.9.0 in CI against 0.11.0 on the host

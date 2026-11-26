@@ -96,7 +96,7 @@ RUNTIMES_HOOK="$ROOT/chezmoi/run_onchange_after_20_configure-runtimes.sh.tmpl"
 # ADR-011: the latest stable of every component, never an old pin. Every [tools] value
 # is "latest", "lts" (node only), "stable" (rust only) or a Java LTS major line; no tool
 # carries a hard-coded patch version. Comment lines are excluded.
-tool_lines="$(grep -vE '^[[:space:]]*#' "$MISE_CONFIG" | grep -E '^"?[A-Za-z:/_-]+"? *= ')"
+tool_lines="$(grep -vE '^[[:space:]]*#' "$MISE_CONFIG" | grep -E '^"?[A-Za-z:/@_-]+"? *= ')"
 while IFS= read -r line; do
   key="${line%%=*}"
   key="${key//[ \"]/}"
@@ -120,6 +120,25 @@ assert_match '^rust = "stable"$' "$MISE_CONFIG"
 # at "latest" (ADR-011), and must not return to the Brewfile.
 assert_match '^"aqua:openai/codex" = "latest"$' "$MISE_CONFIG"
 refute_match '^brew "codex"' "$ROOT/profiles"
+
+# GitHub Copilot CLI: mise's npm: backend at "latest" (ADR-011), like cline. The scoped
+# name carries an @, which the [tools] spelling loop above must still see.
+assert_match '^"npm:@github/copilot" = "latest"$' "$MISE_CONFIG"
+grep -qE '^"npm:@github/copilot"' <<<"$tool_lines" ||
+  {
+    echo 'the ADR-011 spelling loop does not see scoped npm: entries' >&2
+    exit 1
+  }
+
+# New small tools carry purpose comments (render-brewfile.sh checks the syntax) and sit in
+# the profiles the brief assigns; vim comes from apt next to nvim, which stays the editor.
+assert_match '^brew "midnight-commander" +# Two-pane terminal file manager \(mc\)\.$' "$ROOT/profiles/core.Brewfile"
+assert_match '^brew "fastfetch" +# System information summary\.$' "$ROOT/profiles/core.Brewfile"
+assert_match '^brew "cilium-cli" +# Cilium CNI management\.$' "$ROOT/profiles/kubernetes.Brewfile"
+assert_match '^brew "hubble" +# Cilium network observability CLI\.$' "$ROOT/profiles/kubernetes.Brewfile"
+assert_match '^vim +# the classic editor, for scripts and muscle memory; nvim stays the default editor$' "$ROOT/apt/base.list"
+assert_match '^brew "neovim"' "$ROOT/profiles/core.Brewfile"
+refute_match '^brew "vim"' "$ROOT/profiles"
 
 # Homebrew lives under /home/linuxbrew; the Apple Silicon prefix must not leak in.
 refute_match '/opt/homebrew' "$ROOT/chezmoi"
@@ -420,14 +439,27 @@ assert_match '^brew "kubelogin"' "$ROOT/profiles/cloud-azure.Brewfile"
 assert_match '^brew "d2"' "$ROOT/profiles/docs.Brewfile"
 assert_match '^brew "pandoc"' "$ROOT/profiles/docs.Brewfile"
 # gcloud and azure-cli are macOS-only casks in homebrew-core: they must not appear as
-# formulae, and cloud-gcp must not exist until the vendor apt machinery does.
+# formulae. They come from signed vendor apt repositories (apt/vendor.list), selected
+# by the cloud-gcp and cloud-azure profiles.
 refute_match '^brew "(azure-cli|gcloud-cli|google-cloud-sdk)"' "$ROOT/profiles"
-[[ ! -e "$ROOT/profiles/cloud-gcp.Brewfile" ]] || {
-  echo 'cloud-gcp.Brewfile exists but is deferred to the vendor-apt milestone.' >&2
-  exit 1
-}
-assert_match 'cloud-gcp' "$ROOT/TASKS.md"
-assert_match 'azure-cli' "$ROOT/TASKS.md"
+assert_match '^google-cloud-cli +cloud-gcp ' "$ROOT/apt/vendor.list"
+assert_match '^azure-cli +cloud-azure ' "$ROOT/apt/vendor.list"
+for vendor_profile in runtime-docker ai-agents cloud-gcp gpu-nvidia; do
+  [[ -f "$ROOT/profiles/$vendor_profile.Brewfile" ]] || {
+    printf 'missing fragment for vendor-apt profile: %s\n' "$vendor_profile" >&2
+    exit 1
+  }
+  # runtime-docker carries exactly one formula, skopeo (ADR-016); the rest have none.
+  if [[ "$vendor_profile" == runtime-docker ]]; then
+    assert_match '^brew "skopeo"' "$ROOT/profiles/runtime-docker.Brewfile"
+    [[ "$(grep -c -E '^(brew|cask) ' "$ROOT/profiles/runtime-docker.Brewfile")" -eq 1 ]] || {
+      echo 'runtime-docker.Brewfile must hold exactly one entry, brew "skopeo".' >&2
+      exit 1
+    }
+  else
+    refute_match '^(brew|cask) ' "$ROOT/profiles/$vendor_profile.Brewfile"
+  fi
+done
 
 # docs/DROPPED.md: one row per dropped tool, linked from the README and ARCHITECTURE.
 DROPPED="$ROOT/docs/DROPPED.md"

@@ -16,7 +16,11 @@ VALID_PROFILES=(
   cloud
   cloud-aws
   cloud-azure
+  cloud-gcp
   docs
+  runtime-docker
+  ai-agents
+  gpu-nvidia
 )
 
 validate_profiles() {

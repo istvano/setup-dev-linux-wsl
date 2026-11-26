@@ -16,3 +16,6 @@ brew "argocd"    # CLI for Argo CD: app sync, diff and rollback against remote c
 brew "kustomize" # Standalone overlay rendering, for pipelines that cannot rely on kubectl -k.
 brew "helmfile"  # Declares and reconciles many Helm releases as one desired state.
 brew "kubeseal"  # Encrypts secrets to SealedSecrets so manifests are safe to commit.
+# Cilium: management and network observability.
+brew "cilium-cli"  # Cilium CNI management.
+brew "hubble"      # Cilium network observability CLI.

@@ -33,7 +33,8 @@ repo stays on 26.04):
   and `.../stable/deb/nvidia-container-toolkit.list`. This repo is one release-agnostic
   flat repo (`deb ... $(ARCH) /`), so it has no 26.04 suite to be missing.
 - Anthropic Claude Code: documented at https://code.claude.com/docs/en/setup as
-  `deb [signed-by=/etc/apt/keyrings/claude-code.asc] https://downloads.claude.ai/claude-code/apt/stable stable main`.
+  `deb [signed-by=/etc/apt/keyrings/claude-code.asc] https://downloads.claude.ai/claude-code/apt/stable stable main`
+  (the keyring is installed here as `anthropic.asc`, one keyring per vendor; ADR-016).
   `https://downloads.claude.ai/claude-code/apt/stable/dists/stable/Release` and
   `.../main/binary-amd64/Packages` return 200. The suite is `stable`, not an Ubuntu
   codename, so it is distro-agnostic and has no 26.04 gap.
@@ -42,7 +43,8 @@ repo stays on 26.04):
 
 Status: accepted. Spec section 3.
 
-apt supplies the small base and vendor repos (Docker, NVIDIA, Anthropic). Homebrew on
+apt supplies the small base and vendor repos (Docker, NVIDIA, Anthropic, Microsoft,
+Google). Homebrew on
 Linux supplies CLI tools through composable profile Brewfiles, keeping the macOS
 repo's profile model. mise manages language runtimes and uv manages Python.
 
@@ -262,7 +264,7 @@ following Homebrew's latest; pin it with mise if clusters fall more than one min
 Status: accepted, 2026-11-26, after a Mac, Windows and WSL parity comparison.
 
 1. **Go telemetry off.** `run_after_31_telemetry-optout` ports setup-dev-mac's
-   hook 31 (Go and aider; gcloud is absent here). Go's telemetry defaults to local-only
+   hook 31 (Go and aider; gcloud was added by ADR-016 item 11). Go's telemetry defaults to local-only
    counters, so `go telemetry off` declines to collect at all. The hook finds go with
    `mise which go`, never `mise exec`, because `exec` installs a missing toolchain and a
    telemetry opt-out must not download one; it is a no-op when already off and never
@@ -291,3 +293,111 @@ Status: accepted, 2026-11-26, after a Mac, Windows and WSL parity comparison.
    60-second bound.
 
 Rejected: Homebrew's aider formula (builds numpy and scipy from source, as on the Mac).
+
+## ADR-016: Vendor apt repositories and the linux-target Docker
+
+Status: accepted, 2026-11-26, as part of handing the host-side items of `setup-dev-linux`
+over to this repository.
+
+1. **One signed repository per profile, from committed keys.** `apt/vendor.list` is the
+   catalogue and `script/apt-vendor` applies it for the selected profiles and the current
+   target. Keys are committed under `apt/keys/<key>.asc`; each row carries the key's full
+   fingerprint, and the install is refused before any write if the file does not hold
+   exactly that one primary key. Nothing is fetched at install time, `apt-key` and the
+   legacy trust store are never used, and no download-and-run script is involved.
+   Fingerprints:
+
+   | Vendor | Repository id | Fingerprint |
+   |---|---|---|
+   | Docker | docker | `9DC858229FC7DD38854AE2D88D81803C0EBFCD88` |
+   | Microsoft | azure-cli | `BC528686B50D79E339D3721CEB3E94ADBE1229CF` |
+   | Google | google-cloud-cli | `35BAA0B33E9EB396F59CA838C0BA5CE6DC6315A3` |
+   | NVIDIA | nvidia-container-toolkit | `C95B321B61E88C1809C4F759DDCAE044F796ECB0` |
+   | Anthropic | anthropic | `31DDDE24DDFAB679F42D7BD2BAA929FF1A7ECACE` |
+
+2. **One keyring per vendor, one `Signed-By` per URI.** The keyring is
+   `/etc/apt/keyrings/<key>.asc` (key ids `docker`, `microsoft`, `google-cloud`,
+   `nvidia-container-toolkit`, `anthropic`); the source is
+   `/etc/apt/sources.list.d/<id>.sources` in deb822 form, named by repository id. APT
+   refuses every source, not just the offending one, when one URI appears twice with
+   different `Signed-By` values; the older `setup-dev-linux` hit this with Claude Desktop
+   and ChatGPT. So repositories of one vendor share one keyring, and the Anthropic keyring
+   is named `anthropic` so a host repository can reuse the same file. `script/apt-vendor`
+   scans every existing source for the same URI under another `Signed-By` and stops before
+   writing anything, naming the file; an unreadable source file stops the run too, because
+   a conflict cannot then be ruled out. It never removes a file it did not write. Files it
+   wrote start with a marker line and are rewritten on the next apply. The one exception
+   is a file at one of its own `<id>.sources` paths that lacks the marker (Docker's own
+   instructions write `docker.sources`): it is first copied with `cp -p` to
+   `<id>.sources.<UTC timestamp>.bak`, then replaced, and the copy is logged. APT ignores
+   that name silently: `.bak$` is in its default `Dir::Ignore-Files-Silently` list, and
+   `sources.list.d` is read only for names ending `.list` or `.sources`.
+3. **Suites.** `vendor.list` carries the suite per repository: a literal, or `@codename`
+   for the machine's `VERSION_CODENAME`. Checked against the vendors' Release indexes on
+   2026-11-26: Docker and azure-cli publish `resolute` (Ubuntu 26.04); Google (`cloud-sdk`)
+   and Anthropic (`stable`) are release-agnostic; NVIDIA is a flat repository (suite `/`,
+   no components). ADR-002's fallback rule still applies if a release gap appears.
+4. **Latest stable, no pins** (ADR-011). Vendor packages install the repository's current
+   version; there is no `apt/pins.lock`.
+5. **Targets.** Each row names where it may be written. `runtime-docker` and `gpu-nvidia`
+   are `--target linux` only for now: Docker inside WSL belongs to the WSL milestone
+   (`appendWindowsPath=false`, the `code` wrapper, the credential store), and bootstrap
+   refuses both profiles on `--target wsl` with a message naming that milestone.
+   `cloud-gcp`, `cloud-azure` (azure-cli) and `ai-agents` work on both targets.
+6. **Docker Engine on the linux target** (`runtime-docker`, `script/docker-setup`).
+   Rootful dockerd under systemd, packages `docker-ce`, `docker-ce-cli`, `containerd.io`,
+   `docker-buildx-plugin`, `docker-compose-plugin`. Order inside bootstrap: guards,
+   apt base, `docker-setup --remove-conflicts`, vendor apt, `docker-setup`. The conflicts
+   (`docker.io`, `podman-docker`) are removed before docker-ce is installed so apt never
+   has to resolve them; the list is for a fresh machine, and `containerd.io` itself
+   conflicts with the distribution's containerd and runc. Docker's documentation lists
+   more (`docker-doc`, `docker-compose`, `docker-compose-v2`); extend the list if a
+   non-fresh machine hits a file conflict. `/etc/docker/daemon.json` counts as in place
+   when it is a JSON object whose `"log-driver"` is `"local"` (parsed with python3; without
+   python3 it must equal `{"log-driver": "local"}` exactly), so keys other tools add are
+   kept: `nvidia-ctk runtime configure --runtime=docker`, which adds `runtimes.nvidia`
+   (the `gpu-nvidia` step), is compatible and is not reverted. Any other file is first
+   copied to `daemon.json.backup.<UTC timestamp>`, then replaced with
+   `{"log-driver": "local"}`, and a running docker is restarted, which stops running
+   containers. Settings in a replaced file are not merged; take them from the backup. The
+   operator is added to the `docker` group.
+7. **Docker's ports are reachable from the network on this target.** That is the
+   operator's decision. No loopback binding is configured, so a published port without a
+   `127.0.0.1` host part listens on every interface. This differs from the container
+   rule for the other targets and for `setup-dev-mac`, and it applies only here. UFW is
+   not a control for it: Docker writes its own iptables rules ahead of UFW's, so UFW does
+   not filter Docker's published ports. Restrict exposure in the project's compose file
+   or with rules in the `DOCKER-USER` chain. Membership of the `docker` group is
+   root-equivalent (anyone in it can bind-mount the host filesystem into a container) and
+   takes effect at the next login; the script warns when it adds you.
+8. **Claude Code from Anthropic's apt repository.** Profile `ai-agents`, package
+   `claude-code` from `https://downloads.claude.ai/claude-code/apt/stable` (suite
+   `stable`, component `main`), signed by the key whose user id is "Anthropic Claude Code
+   Release Signing". It updates with `apt`, not by self-update.
+9. **GitHub Copilot CLI through mise.** `"npm:@github/copilot" = "latest"` in the
+   dev-profile mise config, beside cline and for the same reason (ADR-009, ADR-011). It
+   authenticates with the operator's own `copilot` then `/login`; nothing is stored.
+10. **Other items moved from `setup-dev-linux`.** `azure-cli` (`cloud-azure`) and
+    `google-cloud-cli` (`cloud-gcp`), both macOS-only casks in homebrew-core (ADR-010);
+    `skopeo` in `runtime-docker`, the one formula of an otherwise empty vendor-apt
+    fragment (daemonless image inspect and copy; it needs no daemon or privilege);
+    `midnight-commander` and `fastfetch` in `core`, `cilium-cli` and `hubble` in
+    `kubernetes`; `vim` in `apt/base.list` (nvim stays the default editor). The NVIDIA
+    Container Toolkit is in the opt-in `gpu-nvidia` profile, not part of every Docker
+    install. The default profiles stay under the ADR-008 cap. What stays in
+    `setup-dev-linux` (desktop applications and their repositories, snaps, GNOME, drivers,
+    VS Code extensions) is not carried over.
+
+11. **Telemetry posture** (ADR-006: no tool reports our usage to its vendor, verified
+    opt-outs only). gcloud: hook 31 now runs `gcloud config set disable_usage_reporting
+    true` when gcloud is present, the verified opt-out `setup-dev-mac` uses (ADR-046 there).
+    Claude Code: OpenTelemetry export is opt-in via `CLAUDE_CODE_ENABLE_TELEMETRY`; it is
+    left unset, which is the off state, and no variable is set on the chance that it
+    helps. GitHub Copilot CLI: not yet audited, so nothing is set and no claim is made
+    about it (TASKS.md). Docker Engine, skopeo and the NVIDIA Container Toolkit were not
+    audited either; none is known to report usage.
+
+Rejected: Docker's convenience script (`get.docker.com`, a download-and-run script);
+Ubuntu's `docker.io` (older, and it conflicts with docker-ce); rootless Docker (a different
+networking model, not evaluated for this target); `apt-key` or `/etc/apt/trusted.gpg.d` (trusts a key for every
+repository).

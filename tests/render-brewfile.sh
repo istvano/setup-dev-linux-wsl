@@ -62,6 +62,16 @@ refute_command '--output without a value accepted' "$RENDER" --output
   exit 1
 }
 
+# New default entries are rendered; dropping a profile from the selection only stops
+# rendering its formulae (so verify no longer demands them) and uninstalls nothing, which
+# the refutations on script/packages below pin.
+for formula in midnight-commander fastfetch cilium-cli hubble; do
+  assert_match "^brew \"$formula\" " "$TMP/default.Brewfile"
+done
+"$RENDER" --profiles core --output "$TMP/core-only.Brewfile" >/dev/null
+assert_match '^brew "fastfetch" ' "$TMP/core-only.Brewfile"
+refute_match '^brew "(cilium-cli|hubble)"' "$TMP/core-only.Brewfile"
+
 # script/packages renders with the caller's selection and never removes anything.
 PACKAGES="$ROOT/script/packages"
 assert_match '^[[:space:]]*--profiles \| --shell\)' "$PACKAGES"
@@ -69,6 +79,7 @@ assert_match 'script/render-brewfile" .*render_args' "$PACKAGES"
 assert_match 'brew bundle check' "$PACKAGES"
 assert_match 'brew bundle install' "$PACKAGES"
 refute_match 'brew bundle (cleanup|dump)' "$PACKAGES"
+refute_match 'brew (uninstall|remove|rm)|--force|--zap' "$PACKAGES"
 assert_match 'default_brewfile_path' "$RENDER"
 assert_match 'default_brewfile_path' "$PACKAGES"
 refute_command 'packages: --profiles without a value accepted' "$PACKAGES" --profiles
