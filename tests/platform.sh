@@ -103,4 +103,19 @@ mkdir -p "$tmp/c/a/.git" "$tmp/c/a1/b2/c3/d4/e5/.git"
 got="$(MNT_ROOT="$tmp" in_env repos_under_mnt)"
 expect_eq "$got" "$tmp/c/a/.git"
 
+# The companion Windows host repository is exempt by its origin, with or without .git;
+# a look-alike name and a repo with no origin still count.
+for url in https://github.com/istvano/setup-dev-win.git https://github.com/istvano/setup-dev-win; do
+  rm -rf "$tmp/c"
+  git init -q "$tmp/c/install/setup-dev-win"
+  git -C "$tmp/c/install/setup-dev-win" remote add origin "$url"
+  got="$(MNT_ROOT="$tmp" in_env repos_under_mnt)"
+  expect_eq "$got" ""
+done
+git init -q "$tmp/c/src/other"
+git -C "$tmp/c/src/other" remote add origin https://github.com/istvano/setup-dev-win-fork.git
+git init -q "$tmp/c/src/bare"
+got="$(MNT_ROOT="$tmp" in_env repos_under_mnt | sort)"
+expect_eq "$got" "$(printf '%s\n%s' "$tmp/c/src/bare/.git" "$tmp/c/src/other/.git")"
+
 echo 'platform tests passed.'
