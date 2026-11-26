@@ -55,7 +55,7 @@ refute_match 'apt-key|trusted=yes' "$LIST"
 # --- Committed keys: each fingerprint equals the constant (real gpg).
 if command -v gpg >/dev/null 2>&1; then
   for key in "${!FPR[@]}"; do
-    got="$(gpg --show-keys --with-colons "$ROOT/apt/keys/$key.asc" | awk -F: '/^pub/{p=1} p&&/^fpr/{print $10; exit}')"
+    got="$(gpg --show-keys --with-colons "$ROOT/apt/keys/$key.asc" | awk -F: '/^pub/ { p = 1; next } p && /^fpr/ { print $10; p = 0 }')"
     [[ "$got" == "${FPR[$key]}" ]] || fail "apt/keys/$key.asc fingerprint is $got, expected ${FPR[$key]}"
   done
 elif [[ "${REQUIRE_LINTERS:-0}" == 1 ]]; then
@@ -90,7 +90,11 @@ FAKE
 cat >"$bin/gpg" <<'FAKE'
 #!/usr/bin/env bash
 file="${*: -1}"
-printf 'pub:-:4096:1:ABCDEF:1::-:::scESC::::::23::0:\nfpr:::::::::%s:\nsub:-:4096:1:123456:1::::::e::::::23:\nfpr:::::::::0000000000000000000000000000000000000000:\n' "$(tr -d '[:space:]' <"$file")"
+# One pub record per non-blank line of the file, so a test can put two keys in one file.
+while IFS= read -r fpr; do
+  [[ -n "${fpr// /}" ]] || continue
+  printf 'pub:-:4096:1:ABCDEF:1::-:::scESC::::::23::0:\nfpr:::::::::%s:\nsub:-:4096:1:123456:1::::::e::::::23:\nfpr:::::::::0000000000000000000000000000000000000000:\n' "$fpr"
+done <"$file"
 FAKE
 cat >"$bin/dpkg-query" <<'FAKE'
 #!/usr/bin/env bash
@@ -193,6 +197,14 @@ run_vendor --profiles runtime-docker,cloud-azure --target linux
 [[ "$STATUS" -ne 0 ]] || fail "a wrong fingerprint should fail"
 [[ "$OUT" == *docker* && "$OUT" == *ingerprint* ]] || fail "the message should name the key and the fingerprint: $OUT"
 [[ "$(written)" -eq 0 && "$(sudo_calls)" -eq 0 ]] || fail "nothing may be written before the fingerprint passes (azure-cli's key was fine, docker's was not)"
+
+# A file that holds the expected key plus a second one is refused too: the whole file
+# becomes the keyring, so APT would trust a repository signed by either.
+fresh
+printf '%s\n%s\n' "${FPR[docker]}" "${FPR[microsoft]}" >"$tmp/root/keys-src/docker.asc"
+run_vendor --profiles runtime-docker --target linux
+[[ "$STATUS" -ne 0 && "$OUT" == *docker* && "$OUT" == *ingerprint* ]] || fail "a key file with two keys should be refused: $OUT"
+[[ "$(written)" -eq 0 && "$(sudo_calls)" -eq 0 ]] || fail "nothing may be written for a two-key file"
 
 # An existing source for the same URI with another Signed-By stops the run, naming the
 # file, before any write: APT refuses every source when one URI has two Signed-By values.

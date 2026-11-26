@@ -240,9 +240,12 @@ command_exists gpg || die "gpg not found; script/apt-base installs gnupg."
 for i in "${!R_ID[@]}"; do
   key="${R_KEY[$i]}"
   [[ -f "$KEYS_SRC/$key.asc" ]] || die "Missing committed key: $KEYS_SRC/$key.asc"
-  got="$(gpg --show-keys --with-colons "$KEYS_SRC/$key.asc" | awk -F: '/^pub/ { p = 1 } p && /^fpr/ { print $10; exit }')"
+  # Every primary key in the file, one fingerprint per line (subkeys are ignored). The
+  # file becomes the keyring that Signed-By names, so a second key riding along would be
+  # trusted too: it must hold exactly the one expected key.
+  got="$(gpg --show-keys --with-colons "$KEYS_SRC/$key.asc" | awk -F: '/^pub/ { p = 1; next } p && /^fpr/ { print $10; p = 0 }')"
   [[ "$got" == "${R_FPR[$i]}" ]] ||
-    die "Key fingerprint mismatch for $key: $KEYS_SRC/$key.asc is '${got:-unreadable}', apt/vendor.list expects ${R_FPR[$i]}. Nothing was written."
+    die "Key fingerprint mismatch for $key: $KEYS_SRC/$key.asc holds '${got//$'\n'/ }', apt/vendor.list expects exactly ${R_FPR[$i]}. Nothing was written."
 done
 refused=0
 for i in "${!R_ID[@]}"; do
