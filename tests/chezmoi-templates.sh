@@ -344,6 +344,130 @@ krew_hook "$TMP/krew-none"
   exit 1
 }
 
+# --- ADR-015: the uv-tools hook (aider) and the telemetry hook (Go, aider), run for
+# real against stubs. Never fatal; no toolchain download just to answer a question.
+UVTOOLS_HOOK="$ROOT/chezmoi/run_onchange_after_29_uv-tools.sh.tmpl"
+TELEMETRY_HOOK="$ROOT/chezmoi/run_onchange_after_31_telemetry-optout.sh.tmpl"
+sed 's|^profiles = .*|profiles = ["core"]|' "$ROOT/tests/fixtures/chezmoi/linux.toml" >"$TMP/core-only.toml"
+[[ -z "$(render "$TMP/core-only.toml" "$UVTOOLS_HOOK" | tr -d '[:space:]')" ]] || {
+  echo 'uv-tools hook renders without the dev profile.' >&2
+  exit 1
+}
+render linux.toml "$UVTOOLS_HOOK" >"$TMP/uvtools.sh"
+render linux.toml "$TELEMETRY_HOOK" >"$TMP/telemetry.sh"
+[[ -s "$TMP/uvtools.sh" && -s "$TMP/telemetry.sh" ]] || {
+  echo 'uv-tools or telemetry hook renders empty.' >&2
+  exit 1
+}
+grep -v '^[[:space:]]*#' "$TMP/telemetry.sh" >"$TMP/telemetry.code"
+refute_match 'mise exec' "$TMP/telemetry.code"
+assert_match 'mise which go' "$TMP/telemetry.sh"
+assert_match 'uv tool install' "$TMP/uvtools.sh"
+refute_match 'aider-chat==' "$TMP/uvtools.sh" # ADR-011: latest stable, no pin (comments say so without the spelling)
+
+STUBS="$TMP/stubs"
+mkdir -p "$STUBS/uv-ok" "$STUBS/uv-have" "$STUBS/uv-fail" "$STUBS/mise" "$STUBS/mise-none" "$STUBS/aider" "$STUBS/empty"
+cat >"$STUBS/uv-ok/uv" <<'STUB'
+#!/bin/sh
+case "$1 $2" in
+  "tool list") exit 0 ;;
+  "tool install") echo "$*" >>"$UV_LOG"; exit 0 ;;
+esac
+STUB
+cat >"$STUBS/uv-have/uv" <<'STUB'
+#!/bin/sh
+case "$1 $2" in
+  "tool list") printf 'aider-chat v0.99.0\n- aider\n'; exit 0 ;;
+  "tool install") echo "$*" >>"$UV_LOG"; exit 0 ;;
+esac
+STUB
+cat >"$STUBS/uv-fail/uv" <<'STUB'
+#!/bin/sh
+[ "$1 $2" = "tool list" ] && exit 0
+exit 1
+STUB
+cat >"$STUBS/mise/mise" <<STUB
+#!/bin/sh
+# stub: only \`mise which go\` is allowed; anything else (exec, install) is a violation
+[ "\$1 \$2" = "which go" ] || { echo "stub mise: unexpected \$*" >>"\$MISE_LOG"; exit 1; }
+echo "$STUBS/mise/go"
+STUB
+cat >"$STUBS/mise/go" <<'STUB'
+#!/bin/sh
+state="$HOME/.go-telemetry"
+case "$1 $2" in
+  "telemetry ") cat "$state" 2>/dev/null || echo local ;;
+  "telemetry off") echo off >"$state"; echo "go telemetry off" >>"$GO_LOG" ;;
+esac
+STUB
+printf '#!/bin/sh\nexit 1\n' >"$STUBS/mise-none/mise"
+cat >"$STUBS/aider/aider" <<'STUB'
+#!/bin/sh
+# stub: refuses to run with stdin attached, as the real one stalls on OpenRouter login
+[ -t 0 ] && exit 1
+mkdir -p "$HOME/.aider"
+echo '{"permanently_disable": true}' >"$HOME/.aider/analytics.json"
+exit 1
+STUB
+chmod +x "$STUBS"/*/*
+
+hook_run() { # hook_run SCRIPT STUB_DIR...: output in $hook_out, status in $rc
+  local script="$1" path=""
+  shift
+  for d in "$@"; do path+="$d:"; done
+  rc=0
+  rm -rf "$TMP/uhome"
+  mkdir -p "$TMP/uhome"
+  : >"$TMP/uv.log" && : >"$TMP/go.log" && : >"$TMP/mise.log"
+  hook_out="$(HOME="$TMP/uhome" UV_LOG="$TMP/uv.log" GO_LOG="$TMP/go.log" MISE_LOG="$TMP/mise.log" \
+    PATH="$path/usr/bin:/bin" "$BASH_BIN" "$script" 2>&1 </dev/null)" || rc=$?
+}
+# uv-tools: installs aider-chat unpinned on Python 3.12, once.
+hook_run "$TMP/uvtools.sh" "$STUBS/uv-ok"
+if ! { [[ "$rc" == 0 ]] && grep -qx 'tool install --force --python 3.12 aider-chat' "$TMP/uv.log"; }; then
+  printf 'uv-tools hook did not install aider-chat (rc %s):\n%s\n%s\n' "$rc" "$hook_out" "$(cat "$TMP/uv.log")" >&2
+  exit 1
+fi
+hook_run "$TMP/uvtools.sh" "$STUBS/uv-have"
+[[ "$rc" == 0 && ! -s "$TMP/uv.log" ]] || {
+  printf 'uv-tools hook is not idempotent (rc %s):\n%s\n' "$rc" "$(cat "$TMP/uv.log")" >&2
+  exit 1
+}
+hook_run "$TMP/uvtools.sh" "$STUBS/uv-fail"
+((rc == 0)) || {
+  printf 'uv-tools hook must not fail when an install fails (rc %s):\n%s\n' "$rc" "$hook_out" >&2
+  exit 1
+}
+hook_run "$TMP/uvtools.sh" "$STUBS/empty"
+((rc == 0)) || {
+  echo 'uv-tools hook must exit 0 when uv is missing.' >&2
+  exit 1
+}
+# telemetry: Go off through `mise which`, idempotent, never fatal, never a download.
+hook_run "$TMP/telemetry.sh" "$STUBS/mise"
+if ! { [[ "$rc" == 0 ]] && grep -q 'go telemetry off' "$TMP/go.log" && [[ ! -s "$TMP/mise.log" ]]; }; then
+  printf 'telemetry hook did not turn Go telemetry off via mise which (rc %s):\n%s\n%s\n' "$rc" "$hook_out" "$(cat "$TMP/mise.log")" >&2
+  exit 1
+fi
+mkdir -p "$TMP/uhome" && echo off >"$TMP/uhome/.go-telemetry"
+rc=0
+: >"$TMP/go.log"
+hook_out="$(HOME="$TMP/uhome" GO_LOG="$TMP/go.log" MISE_LOG="$TMP/mise.log" PATH="$STUBS/mise:/usr/bin:/bin" "$BASH_BIN" "$TMP/telemetry.sh" 2>&1 </dev/null)" || rc=$?
+[[ "$rc" == 0 && ! -s "$TMP/go.log" ]] || {
+  echo 'telemetry hook is not idempotent for Go.' >&2
+  exit 1
+}
+hook_run "$TMP/telemetry.sh" "$STUBS/mise-none"
+((rc == 0)) || {
+  printf 'telemetry hook must exit 0 when mise cannot find go (rc %s):\n%s\n' "$rc" "$hook_out" >&2
+  exit 1
+}
+hook_run "$TMP/telemetry.sh" "$STUBS/aider"
+if ! { [[ "$rc" == 0 ]] && grep -q 'permanently_disable' "$TMP/uhome/.aider/analytics.json"; }; then
+  printf 'telemetry hook did not record the aider opt-out (rc %s):\n%s\n' "$rc" "$hook_out" >&2
+  exit 1
+fi
+
 # --- .chezmoiignore keeps repository documents out of $HOME.
 for fixture in "${FIXTURES[@]}"; do
   ignored="$(render "$fixture" "$ROOT/chezmoi/.chezmoiignore")"
