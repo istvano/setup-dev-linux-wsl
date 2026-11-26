@@ -449,7 +449,16 @@ for vendor_profile in runtime-docker ai-agents cloud-gcp gpu-nvidia; do
     printf 'missing fragment for vendor-apt profile: %s\n' "$vendor_profile" >&2
     exit 1
   }
-  refute_match '^(brew|cask) ' "$ROOT/profiles/$vendor_profile.Brewfile"
+  # runtime-docker carries exactly one formula, skopeo (ADR-016); the rest have none.
+  if [[ "$vendor_profile" == runtime-docker ]]; then
+    assert_match '^brew "skopeo"' "$ROOT/profiles/runtime-docker.Brewfile"
+    [[ "$(grep -c -E '^(brew|cask) ' "$ROOT/profiles/runtime-docker.Brewfile")" -eq 1 ]] || {
+      echo 'runtime-docker.Brewfile must hold exactly one entry, brew "skopeo".' >&2
+      exit 1
+    }
+  else
+    refute_match '^(brew|cask) ' "$ROOT/profiles/$vendor_profile.Brewfile"
+  fi
 done
 
 # docs/DROPPED.md: one row per dropped tool, linked from the README and ARCHITECTURE.
