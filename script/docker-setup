@@ -111,7 +111,7 @@ if ((check)); then
     printf 'conflict: %s is installed and conflicts with docker-ce\n' "$pkg"
     drift=1
   done < <(installed_conflicts)
-  if ((! conflicts_only)); then
+  if ((!conflicts_only)); then
     daemon_json_matches || {
       printf 'drift: %s is missing, invalid, or its log-driver is not local (expected %s)\n' "$DAEMON_JSON" "$DAEMON_JSON_CONTENT"
       drift=1
@@ -146,7 +146,7 @@ remove_conflicts() {
 }
 
 remove_conflicts
-((! conflicts_only)) || exit 0
+((!conflicts_only)) || exit 0
 
 command_exists systemctl || die "systemctl not found; Docker on this target runs under systemd."
 
