@@ -1,0 +1,61 @@
+{{- if has "dev" .profiles -}}
+#!/usr/bin/env bash
+# Install the declared standalone Python CLIs as isolated uv tools (ADR-015).
+#
+# aider is a default part of the dev profile, so it has to arrive on a new machine
+# without anyone remembering a command. setup-dev-mac does the same in its hook 29.
+#
+# Tools: {{ range $i, $t := (list "aider-chat") }}{{ if $i }} {{ end }}{{ $t }}{{ end }}
+#
+# That line is load-bearing, not a summary: run_onchange hashes the rendered script, so
+# the list appearing in the body is what makes this hook re-run when it changes. Same
+# construction as hook 28.
+#
+# NOT PINNED, unlike the Mac, which pins aider-chat with ==. ADR-011 installs the latest
+# stable version of everything here, so this is `uv tool install aider-chat` with no
+# version. The hook installs a missing tool and leaves an installed one alone, so a
+# re-apply is silent and costs no network; `uv tool upgrade aider-chat` moves it forward.
+#
+# WHY NOT Homebrew. The aider formula builds numpy and scipy from source and drags in a
+# compiler toolchain; PyPI publishes x86_64 wheels, so uv installs the same software with
+# no compiler involved.
+#
+# WHY --python 3.12. aider-chat requires Python <3.13,>=3.10, and mise's python is
+# "latest", which is newer. uv fetches its own standalone CPython 3.12 for this one
+# environment; it never becomes `python3` on PATH and never competes with mise's.
+set -Eeuo pipefail
+
+{{ template "brew-shellenv" . }}
+
+TOOLS=({{ range $i, $t := (list "aider-chat") }}{{ if $i }} {{ end }}{{ $t | quote }}{{ end }})
+
+command -v uv >/dev/null 2>&1 || {
+  echo "[WARN] uv is not installed, so no Python CLIs were installed." >&2
+  exit 0
+}
+
+# `uv tool list` prints "<name> v<version>" per tool, each followed by its executables
+# prefixed with "- ". Matching the name at the start of a line, followed by " v", cannot
+# be satisfied by an executable line.
+installed="$(uv tool list 2>/dev/null || true)"
+failed=0
+for name in "${TOOLS[@]}"; do
+  if printf '%s\n' "$installed" | grep -q "^$name v"; then
+    continue
+  fi
+  echo "[INFO] Installing Python CLI: $name" >&2
+  uv tool install --force --python 3.12 "$name" >/dev/null 2>&1 || {
+    echo "[WARN] Could not install Python CLI: $name" >&2
+    failed=$((failed + 1))
+  }
+done
+
+# Reported, never fatal. chezmoi stops at the first failing script, so a tool that will not
+# download must not cost the hooks after this one.
+if ((failed > 0)); then
+  echo "[WARN] $failed Python CLI(s) could not be installed. Retry with:" >&2
+  echo "       uv tool install --force --python 3.12 <name>" >&2
+fi
+
+exit 0
+{{- end }}

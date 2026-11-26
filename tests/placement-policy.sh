@@ -134,12 +134,26 @@ FISHRC="$ROOT/chezmoi/dot_config/fish/config.fish.tmpl"
 LOGIN_HOOK="$ROOT/chezmoi/run_onchange_after_30_report-login-shell.sh.tmpl"
 for file in "$ZSHRC" "$FISHRC" "$LOGIN_HOOK" "$ROOT/chezmoi/dot_config/starship.toml" \
   "$ROOT/chezmoi/dot_config/atuin/config.toml" "$ROOT/chezmoi/dot_config/ripgrep/ripgreprc" \
-  "$ROOT/chezmoi/dot_tmux.conf" "$ROOT/chezmoi/dot_local/bin/executable_conn"; do
+  "$ROOT/chezmoi/dot_tmux.conf" "$ROOT/chezmoi/dot_local/bin/executable_conn" \
+  "$ROOT/chezmoi/dot_config/nvim/init.lua" "$ROOT/chezmoi/dot_config/bat/config"; do
   [[ -f "$file" ]] || {
     printf 'Missing ported dotfile: %s\n' "$file" >&2
     exit 1
   }
 done
+
+# ADR-015: nvim shares the clipboard on WSL through clip.exe and PowerShell (CR stripped);
+# bat's Catppuccin Mocha theme is built in, so no theme file is shipped.
+NVIM_INIT="$ROOT/chezmoi/dot_config/nvim/init.lua"
+assert_match 'vim\.g\.clipboard' "$NVIM_INIT"
+assert_match 'clip\.exe' "$NVIM_INIT"
+assert_match '/mnt/c/Windows/System32/clip\.exe' "$NVIM_INIT"
+assert_match '/mnt/c/Windows/System32/WindowsPowerShell/v1\.0/powershell\.exe' "$NVIM_INIT"
+assert_match 'Get-Clipboard -Raw' "$NVIM_INIT"
+assert_match 'OutputEncoding=\[Text\.Encoding\]::UTF8' "$NVIM_INIT"
+assert_match 'has\("wsl"\)' "$NVIM_INIT"
+assert_match 'opt\.clipboard = "unnamedplus"' "$NVIM_INIT"
+assert_match '^--theme="Catppuccin Mocha"$' "$ROOT/chezmoi/dot_config/bat/config"
 
 # macOS-only constructs must not survive the port. Comment lines are filtered out,
 # because the files explain what they replaced.

@@ -34,6 +34,9 @@ follows `gitSigningMethod`: `ssh` signs and verifies a commit, `gpg` asserts
 `gpg.format = openpgp` without exercising signing, `none` needs only the SSH key.
 The runtimes hook (`run_onchange_after_20`) fails when `mise install` fails, so
 chezmoi retries it on the next apply.
+The uv-tools hook (`run_onchange_after_29`, aider) and the telemetry hook
+(`run_after_31`, Go and aider opt-outs; every apply, so it retries) never fail the
+apply (ADR-015).
 
 ## Profiles
 

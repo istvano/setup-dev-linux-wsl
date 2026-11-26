@@ -9,6 +9,11 @@ phasing (section 9).
 
 - [ ] L3: WSL integration, Docker Engine, the container substrate and exposure
       checks. Done when `docker compose` works and nothing listens beyond loopback.
+      The change that sets `appendWindowsPath=false` must ship the `~/.local/bin/code`
+      wrapper (VS Code's WSL launcher) in the same patch: the gitconfig difftool and
+      mergetool and the editor fallback find `code` through the Windows PATH today, and
+      would silently stop working. (The nvim clipboard bridge, ADR-015, already prefers
+      absolute /mnt/c/Windows/System32 paths, so it is not affected.)
 - [ ] `cloud-gcp` profile via Google's signed apt repo (`google-cloud-cli`), with the
       vendor-apt machinery of this milestone: `gcloud-cli` is a macOS-only cask in
       homebrew-core (ADR-010). Record it as delivered in docs/DROPPED.md when done.
