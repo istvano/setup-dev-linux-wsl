@@ -9,8 +9,9 @@ machine or VM (`--target linux`). Nothing else is supported.
 
 ## Layers
 
-1. apt: a small base set (`apt/base.list`). Vendor repos with committed keys arrive in
-   a later milestone.
+1. apt: a small base set (`apt/base.list`). Signed vendor repos (committed keys,
+   `apt/vendor.list`, deb822 sources) are applied per profile and target by
+   `script/apt-vendor`.
 2. Homebrew on Linux: CLI tools, from rendered profile Brewfiles.
 3. mise: language runtimes at the latest stable version (node LTS, Java LTS lines; ADR-011); uv for Python.
 4. chezmoi: dotfiles, rooted at `chezmoi/` through `.chezmoiroot`.
@@ -19,7 +20,7 @@ machine or VM (`--target linux`). Nothing else is supported.
 
 `./bootstrap plan|apply` runs the guards (bash 5, not root, x86_64, Ubuntu 26.04,
 target, profiles including `core`) before any step, then `script/apt-base`,
-`script/install-homebrew`, `script/packages`, chezmoi and `script/verify`. On a first
+`script/apt-vendor`, `script/install-homebrew`, `script/packages`, chezmoi and `script/verify`. On a first
 run chezmoi is run as `chezmoi init --source <repo>/chezmoi` with
 `--promptMultichoice`, `--promptChoice` and `--promptString` (keyed by prompt text)
 so its data matches what packages installed. Once `~/.config/chezmoi/chezmoi.toml`

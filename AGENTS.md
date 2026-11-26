@@ -60,8 +60,9 @@ host capability. Do not install a daemon natively merely because a package exist
 ## Sources of truth
 
 - `profiles/*.Brewfile`: Homebrew-on-Linux profiles (formulae only).
-- `apt/`: the base package list (`base.list`). Vendor repo `.sources`, committed
-  keys and `pins.lock` are future work (a later milestone) and do not exist yet.
+- `apt/`: the base package list (`base.list`), the vendor repository catalogue
+  (`vendor.list`) and its committed keys (`keys/*.asc`), applied by `script/apt-vendor`.
+  `pins.lock` is not used: vendor packages are unpinned (ADR-011).
 - `homebrew/brew.lock`: the pinned Homebrew tag and commit (ADR-004).
 - `chezmoi/`: user configuration and idempotent apply hooks.
 - `mcp/`: the approved MCP policy catalogue. Future work; it does not exist yet.

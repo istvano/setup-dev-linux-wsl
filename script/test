@@ -14,6 +14,7 @@ TESTS=(
   platform
   profiles
   apt
+  apt-vendor
   render-brewfile
   homebrew
   chezmoi-templates

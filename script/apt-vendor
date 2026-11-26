@@ -1,0 +1,290 @@
+#!/usr/bin/env bash
+# Configure the signed vendor APT repositories that the selected profiles need, and
+# install their packages (ADR-003).
+#   script/apt-vendor --profiles CSV --target wsl|linux          configure and install
+#   script/apt-vendor --profiles CSV --target wsl|linux --check  report drift; exit 1 if
+#                                                                any, no sudo, no gpg
+#
+# The catalogue is apt/vendor.list (its header documents the columns); the keys are
+# committed under apt/keys/. For each repository of a selected profile and the current
+# target this installs the key as /etc/apt/keyrings/<key>.asc and writes a deb822
+# /etc/apt/sources.list.d/<id>.sources whose Signed-By is that keyring.
+#
+# Order, so a bad input changes nothing: every key's fingerprint is checked against the
+# catalogue, and every existing APT source is scanned for the same URI under another
+# Signed-By (APT refuses ALL sources when one URI has two), before the first write.
+# Nothing is ever uninstalled or removed (repository convention). Keys come only from
+# the committed files: no network fetch, no legacy trust store, no downloaded script.
+#
+# Overridable for tests: APT_VENDOR_LIST, APT_VENDOR_KEYS, APT_KEYRING_DIR,
+# APT_SOURCES_DIR, APT_SOURCES_LIST, OS_RELEASE_FILE.
+set -Eeuo pipefail
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+# shellcheck source=script/lib/common.sh
+source "$ROOT/script/lib/common.sh"
+
+LIST="${APT_VENDOR_LIST:-$ROOT/apt/vendor.list}"
+KEYS_SRC="${APT_VENDOR_KEYS:-$ROOT/apt/keys}"
+KEYRING_DIR="${APT_KEYRING_DIR:-/etc/apt/keyrings}"
+SOURCES_DIR="${APT_SOURCES_DIR:-/etc/apt/sources.list.d}"
+SOURCES_LIST="${APT_SOURCES_LIST:-/etc/apt/sources.list}"
+# First line of every file this script writes: it is how a file of ours is told apart
+# from a vendor's own instructions that happen to share a name.
+MARKER='# Managed by setup-dev-linux-wsl script/apt-vendor; edits are overwritten.'
+
+usage() {
+  echo 'Usage: script/apt-vendor --profiles CSV --target wsl|linux [--check]' >&2
+  exit 1
+}
+
+profiles=""
+target=""
+check=0
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --profiles)
+      require_value "$1" "${2:-}"
+      profiles="$2"
+      shift 2
+      ;;
+    --target)
+      require_value "$1" "${2:-}"
+      target="$2"
+      shift 2
+      ;;
+    --check)
+      check=1
+      shift
+      ;;
+    *) usage ;;
+  esac
+done
+[[ -n "$profiles" && -n "$target" ]] || usage
+[[ "$target" == wsl || "$target" == linux ]] || die "Unknown --target: $target (use wsl or linux)."
+[[ -f "$LIST" ]] || die "Vendor catalogue not found: $LIST"
+
+# The selected rows: one array per column, indexed alike. Profile names are not
+# validated here; bootstrap validates them.
+R_ID=() R_SUITE=() R_URI=() R_COMPS=() R_KEY=() R_FPR=() R_PKGS=()
+skipped=()
+while IFS= read -r line || [[ -n "$line" ]]; do
+  line="${line%%#*}"
+  [[ -n "${line//[[:space:]]/}" ]] || continue
+  IFS=$' \t' read -r id profile row_target uri suite comps key fpr packages extra <<<"$line"
+  [[ -n "$packages" && -z "$extra" ]] || die "Malformed line in $LIST: $line"
+  [[ ",$profiles," == *",$profile,"* ]] || continue
+  if [[ "$row_target" != both && "$row_target" != "$target" ]]; then
+    skipped+=("$id")
+    continue
+  fi
+  R_ID+=("$id")
+  R_SUITE+=("$suite")
+  R_URI+=("$uri")
+  R_COMPS+=("$comps")
+  R_KEY+=("$key")
+  R_FPR+=("$fpr")
+  R_PKGS+=("$packages")
+done <"$LIST"
+if ((${#skipped[@]} > 0)); then
+  log "Not for --target $target, skipped: ${skipped[*]}"
+fi
+if ((${#R_ID[@]} == 0)); then
+  log "No vendor repositories for profiles '$profiles' on target $target."
+  exit 0
+fi
+
+codename=""
+resolve_codename() {
+  [[ -n "$codename" ]] && return 0
+  local file="${OS_RELEASE_FILE:-/etc/os-release}"
+  [[ -r "$file" ]] || die "Cannot read $file."
+  codename="$(
+    VERSION_CODENAME=""
+    # shellcheck disable=SC1090  # the path is deliberately variable
+    . "$file"
+    printf '%s' "${VERSION_CODENAME:-}"
+  )"
+  [[ -n "$codename" ]] || die "No VERSION_CODENAME in $file."
+}
+
+# render INDEX: print the deb822 source for one repository.
+render() {
+  local i="$1" suite="${R_SUITE[$1]}" comps="${R_COMPS[$1]}"
+  if [[ "$suite" == @codename ]]; then
+    resolve_codename
+    suite="$codename"
+  fi
+  printf '%s\n' "$MARKER" 'Types: deb' "URIs: ${R_URI[$i]}" "Suites: $suite"
+  [[ "$comps" == - ]] || printf 'Components: %s\n' "${comps//,/ }"
+  printf 'Signed-By: %s/%s.asc\n' "$KEYRING_DIR" "${R_KEY[$i]}"
+}
+
+# normalise URI: no trailing slash, and NVIDIA's literal $(ARCH) is amd64 here.
+normalise() {
+  local u="$1"
+  u="${u//\$(ARCH)/amd64}"
+  while [[ "$u" == */ ]]; do u="${u%/}"; done
+  printf '%s' "$u"
+}
+
+# source_entries FILE: print "uri<TAB>signed-by" for every entry in a deb822 (.sources)
+# or one-line (.list, sources.list) file. An absent or inline Signed-By prints empty,
+# which never equals a keyring path, so it counts as another Signed-By.
+source_entries() {
+  case "$1" in
+    *.sources)
+      awk '
+        function flush(  n, a, i) {
+          if (uris != "") { n = split(uris, a, " "); for (i = 1; i <= n; i++) print a[i] "\t" sb }
+          uris = ""; sb = ""
+        }
+        /^[[:space:]]*#/ { next }
+        /^[[:space:]]*$/ { flush(); next }
+        {
+          l = $0
+          if (tolower(l) ~ /^uris:/) { sub(/^[^:]*:[[:space:]]*/, "", l); uris = l }
+          else if (tolower(l) ~ /^signed-by:/) { sub(/^[^:]*:[[:space:]]*/, "", l); sb = l }
+        }
+        END { flush() }' "$1"
+      ;;
+    *)
+      awk '
+        {
+          l = $0; sub(/#.*/, "", l)
+          if (l !~ /^[[:space:]]*deb(-src)?[[:space:]]/) next
+          sub(/^[[:space:]]*deb(-src)?[[:space:]]+/, "", l)
+          sb = ""
+          if (l ~ /^\[/) {
+            match(l, /\]/); opts = substr(l, 1, RSTART); l = substr(l, RSTART + 1)
+            if (match(opts, /[Ss]igned-[Bb]y=[^ \]]*/)) { sb = substr(opts, RSTART, RLENGTH); sub(/^[^=]*=/, "", sb) }
+          }
+          split(l, f, " "); print f[1] "\t" sb
+        }' "$1"
+      ;;
+  esac
+}
+
+# conflicts INDEX: print a message for every other APT source file that configures this
+# repository's URI under a Signed-By other than ours. A managed file at our own path is
+# ours to rewrite and is skipped; an unmanaged one (the vendor's own) is not.
+conflicts() {
+  local i="$1" want own file uri sb entry
+  want="$(normalise "${R_URI[$i]}")"
+  own="$SOURCES_DIR/${R_ID[$i]}.sources"
+  for file in "$SOURCES_DIR"/*.sources "$SOURCES_DIR"/*.list "$SOURCES_LIST"; do
+    [[ -f "$file" ]] || continue
+    if [[ "$file" == "$own" && "$(head -n1 "$file")" == "$MARKER" ]]; then
+      continue
+    fi
+    while IFS=$'\t' read -r uri sb; do
+      [[ -n "$uri" ]] || continue
+      [[ "$(normalise "$uri")" == "$want" ]] || continue
+      [[ "$sb" == "$KEYRING_DIR/${R_KEY[$i]}.asc" ]] && continue
+      entry="$file configures ${R_URI[$i]} with Signed-By '${sb:-none}', not $KEYRING_DIR/${R_KEY[$i]}.asc. APT refuses every source when one URI has two Signed-By values; remove or rename that file, then re-run."
+      printf '%s\n' "$entry"
+    done < <(source_entries "$file")
+  done
+  return 0
+}
+
+pkg_installed() {
+  [[ "$(dpkg-query -W -f='${Status}' "$1" 2>/dev/null || true)" == "install ok installed" ]]
+}
+
+# missing_packages: print the packages of the selected repositories that are not installed.
+missing_packages() {
+  local i pkg
+  for i in "${!R_ID[@]}"; do
+    IFS=, read -r -a pkgs <<<"${R_PKGS[$i]}"
+    for pkg in "${pkgs[@]}"; do
+      pkg_installed "$pkg" || printf '%s\n' "$pkg"
+    done
+  done
+}
+
+command_exists dpkg-query || die "dpkg-query not found; apt-vendor needs Debian or Ubuntu."
+
+if ((check)); then
+  drift=0
+  for i in "${!R_ID[@]}"; do
+    key="${R_KEY[$i]}"
+    cmp -s "$KEYS_SRC/$key.asc" "$KEYRING_DIR/$key.asc" 2>/dev/null || {
+      printf 'drift: keyring %s/%s.asc is missing or differs from apt/keys/%s.asc\n' "$KEYRING_DIR" "$key" "$key"
+      drift=1
+    }
+    dst="$SOURCES_DIR/${R_ID[$i]}.sources"
+    if [[ ! -f "$dst" ]]; then
+      printf 'drift: source %s is missing\n' "$dst"
+      drift=1
+    elif ! render "$i" | cmp -s - "$dst"; then
+      printf 'drift: source %s differs from the catalogue\n' "$dst"
+      drift=1
+    fi
+    msg="$(conflicts "$i")"
+    if [[ -n "$msg" ]]; then
+      printf 'conflict: %s\n' "$msg"
+      drift=1
+    fi
+  done
+  while IFS= read -r pkg; do
+    printf 'missing: %s\n' "$pkg"
+    drift=1
+  done < <(missing_packages)
+  exit "$drift"
+fi
+
+require_not_root
+command_exists gpg || die "gpg not found; script/apt-base installs gnupg."
+
+# 1. Nothing is written until every key and every existing source has passed.
+for i in "${!R_ID[@]}"; do
+  key="${R_KEY[$i]}"
+  [[ -f "$KEYS_SRC/$key.asc" ]] || die "Missing committed key: $KEYS_SRC/$key.asc"
+  got="$(gpg --show-keys --with-colons "$KEYS_SRC/$key.asc" | awk -F: '/^pub/ { p = 1 } p && /^fpr/ { print $10; exit }')"
+  [[ "$got" == "${R_FPR[$i]}" ]] ||
+    die "Key fingerprint mismatch for $key: $KEYS_SRC/$key.asc is '${got:-unreadable}', apt/vendor.list expects ${R_FPR[$i]}. Nothing was written."
+done
+refused=0
+for i in "${!R_ID[@]}"; do
+  msg="$(conflicts "$i")"
+  if [[ -n "$msg" ]]; then
+    printf '%s[ERROR]%s %s\n' "$C_RED" "$C_RESET" "$msg" >&2
+    refused=1
+  fi
+done
+((refused == 0)) || die "Conflicting APT sources found; nothing was written."
+
+# 2. Write what differs.
+changed=0
+tmp="$(mktemp -d)"
+trap 'rm -rf "$tmp"' EXIT
+for dir in "$KEYRING_DIR" "$SOURCES_DIR"; do
+  [[ -d "$dir" ]] || sudo mkdir -p "$dir"
+done
+for i in "${!R_ID[@]}"; do
+  key="${R_KEY[$i]}"
+  if ! cmp -s "$KEYS_SRC/$key.asc" "$KEYRING_DIR/$key.asc" 2>/dev/null; then
+    sudo install -m 0644 "$KEYS_SRC/$key.asc" "$KEYRING_DIR/$key.asc"
+    log "Installed keyring $KEYRING_DIR/$key.asc"
+    changed=1
+  fi
+  dst="$SOURCES_DIR/${R_ID[$i]}.sources"
+  render "$i" >"$tmp/${R_ID[$i]}.sources"
+  if ! cmp -s "$tmp/${R_ID[$i]}.sources" "$dst" 2>/dev/null; then
+    sudo install -m 0644 "$tmp/${R_ID[$i]}.sources" "$dst"
+    log "Wrote $dst"
+    changed=1
+  fi
+done
+
+# 3. Update and install only when something changed or is missing.
+packages=()
+while IFS= read -r pkg; do packages+=("$pkg"); done < <(missing_packages)
+if ((changed || ${#packages[@]} > 0)); then
+  sudo apt-get update
+fi
+if ((${#packages[@]} > 0)); then
+  sudo apt-get install -y --no-install-recommends "${packages[@]}"
+else
+  log "Vendor packages already installed."
+fi

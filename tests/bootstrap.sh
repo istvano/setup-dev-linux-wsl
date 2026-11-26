@@ -135,7 +135,7 @@ if command -v chezmoi >/dev/null 2>&1; then
   cp "$B" "$rerun_tree/bootstrap"
   cp -R "$ROOT/script/lib" "$rerun_tree/script/lib"
   cp -R "$ROOT/chezmoi" "$rerun_tree/chezmoi"
-  for stub in apt-base install-homebrew packages verify; do
+  for stub in apt-base apt-vendor install-homebrew packages verify; do
     printf '#!/usr/bin/env bash\nexit 0\n' >"$rerun_tree/script/$stub"
     chmod +x "$rerun_tree/script/$stub"
   done
@@ -258,6 +258,7 @@ for pattern in \
   '^[[:space:]]*require_target ' \
   '^[[:space:]]*validate_profiles ' \
   'run_step .*script/apt-base' \
+  'run_step .*script/apt-vendor' \
   'run_step .*script/install-homebrew' \
   'run_step .*script/packages' \
   'apply_chezmoi$' \

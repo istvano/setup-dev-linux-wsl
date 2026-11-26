@@ -1,0 +1,22 @@
+# Vendor APT repositories, written by script/apt-vendor (ADR-003).
+# One repository per line, nine whitespace-separated columns:
+#   id        repository id; the file is /etc/apt/sources.list.d/<id>.sources
+#   profile   the profile that selects it (script/lib/profiles.sh validates the name)
+#   target    both | linux | wsl: where it may be written
+#   uri       the repository URI, without a trailing slash
+#   suite     a literal suite, or @codename for the machine's VERSION_CODENAME;
+#             "/" marks a flat repository
+#   comps     the components, comma separated; "-" for none (flat repositories)
+#   key       keyring id; apt/keys/<key>.asc is installed as /etc/apt/keyrings/<key>.asc.
+#             One keyring per vendor: repositories of one vendor share it
+#   fpr       the full 40-hex fingerprint of the key's primary key; the install is
+#             refused before any write when apt/keys/<key>.asc does not match
+#   packages  the packages this repository supplies, comma separated; unpinned (ADR-011)
+# Suites were checked against the vendors' Release indexes on 2026-11-26: docker and
+# azure-cli publish "resolute" (Ubuntu 26.04); the other three are release-agnostic.
+# The NVIDIA repository is architecture-specific; this repository is x86_64 only.
+docker                    runtime-docker  linux  https://download.docker.com/linux/ubuntu                    @codename  stable  docker                    9DC858229FC7DD38854AE2D88D81803C0EBFCD88  docker-ce,docker-ce-cli,containerd.io,docker-buildx-plugin,docker-compose-plugin
+azure-cli                 cloud-azure     both   https://packages.microsoft.com/repos/azure-cli              @codename  main    microsoft                 BC528686B50D79E339D3721CEB3E94ADBE1229CF  azure-cli
+google-cloud-cli          cloud-gcp       both   https://packages.cloud.google.com/apt                       cloud-sdk  main    google-cloud              35BAA0B33E9EB396F59CA838C0BA5CE6DC6315A3  google-cloud-cli
+nvidia-container-toolkit  gpu-nvidia      linux  https://nvidia.github.io/libnvidia-container/stable/deb/amd64  /       -       nvidia-container-toolkit  C95B321B61E88C1809C4F759DDCAE044F796ECB0  nvidia-container-toolkit
+anthropic                 ai-agents       both   https://downloads.claude.ai/claude-code/apt/stable          stable     main    anthropic                 31DDDE24DDFAB679F42D7BD2BAA929FF1A7ECACE  claude-code
