@@ -198,3 +198,28 @@ so private hostnames never reach it: copy your host files there from the Mac (fo
 `scp mac:~/.ssh/config.d/* ~/.ssh/config.d/`). This machine has its own SSH key (see
 "Enrol this machine's SSH key"), so add its public key to each server's
 `~/.ssh/authorized_keys` before the first `conn`.
+
+## Proxy: proxyon and proxyoff
+
+`proxyon` sets `http_proxy`, `https_proxy`, `all_proxy` and `no_proxy` (and the upper-case
+forms) for the current shell; `proxyoff` restores what was there before. The values live
+in a private file this repository never manages, `~/.config/proxy/proxy.local.json` (or
+the path in `PROXY_SETTINGS`), with exactly these four string keys:
+
+```json
+{"http_proxy": "http://proxy.example:3128", "https_proxy": "http://proxy.example:3128",
+ "all_proxy": "", "no_proxy": "localhost,127.0.0.1"}
+```
+
+`mkdir -p ~/.config/proxy && chmod 700 ~/.config/proxy`, write the file, then
+`chmod 600 ~/.config/proxy/proxy.local.json`. An empty string clears that variable. A file
+from setup-dev-linux (`~/.config/linux-os-setup/proxy.local.json`) has the same format and
+can be moved here. `proxy-settings` explains any rejection (wrong mode, symlink, unknown
+key, bad URL). See ADR-014.
+
+## Git shortcuts
+
+The everyday oh-my-zsh git aliases are back under the same names: `g`, `ga`, `gaa`, `gb`,
+`gc`, `gcmsg`, `gco`, `gcb`, `gsw`, `gd`, `gds`, `gf`, `gl`, `gp`, `gpf`, `glog`, `grb`,
+`grbi`, `gst`, `gsta`, `gstp`. In zsh they are aliases (`alias` lists them); in fish they
+are abbreviations that expand as you type.

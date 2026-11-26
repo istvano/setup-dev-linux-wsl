@@ -20,6 +20,7 @@ TESTS=(
   identity
   bootstrap
   llm-relay
+  shell-helpers
 )
 
 for test in "${TESTS[@]}"; do

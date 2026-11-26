@@ -104,7 +104,7 @@ while IFS= read -r line; do
   value="${value# }"
   case "$key:$value" in
     node:'"lts"' | rust:'"stable"') ;;
-    java:'["temurin-21", "temurin-17", "temurin-25"]') ;;
+    java:'["temurin-25", "temurin-21", "temurin-17"]') ;;
     *:'"latest"') ;;
     *:*)
       echo "mise [tools] entry $key = $value violates ADR-011 (latest/lts/stable/Java LTS only)." >&2
