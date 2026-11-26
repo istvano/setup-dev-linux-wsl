@@ -30,6 +30,16 @@ Options: `--target wsl|linux`, `--profiles CSV`, `--shell zsh|fish`,
 must include `core`. Run it as your normal user, never as root. Existing files that chezmoi would change are copied to
 `<file>.backup.<UTC timestamp>` first.
 
+**After the first apply, run two steps yourself** (the repository never does them):
+
+1. Make your chosen shell the login shell: `chsh -s /usr/bin/zsh` (or the line `apply`
+   prints for fish). Until then new terminals open in bash without Homebrew on `PATH`,
+   and `chezmoi`, `mise` and friends are "not found".
+2. Enrol the printed SSH key at GitHub twice, as an authentication key and as a signing
+   key.
+
+Details: [docs/OPERATIONS.md](docs/OPERATIONS.md), "After the first apply".
+
 ## Profiles
 
 | Profile | Default | Purpose |

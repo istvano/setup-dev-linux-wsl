@@ -43,9 +43,29 @@ The profile list must include `core` (it provides chezmoi, mise and uv); bootstr
 refuses a list without it before any step.
 
 `apply` runs, in order: apt base packages, Homebrew (a pinned clone, never a
-downloaded script), the profile packages, chezmoi, then `script/verify`. Enrol the
-SSH key it prints (see the section below) and, if you want the new shell as your
-login shell, run the `chsh` line it reports; the repository never does either.
+downloaded script), the profile packages, chezmoi, then `script/verify`.
+
+### After the first apply: two steps you run yourself
+
+The repository never changes your login shell and never uploads a key (ADR-007, ADR-005), so
+these stay with you. Do both once per machine.
+
+1. **Make your chosen shell the login shell.** Ubuntu's default login shell is bash,
+   and the repository configures only the shell you chose (zsh by default). Until you
+   switch, every new terminal, including `wsl -d dev`, opens in bash without Homebrew
+   on `PATH`, so `chezmoi`, `mise` and the other tools report "command not found". Do
+   not install the snap Ubuntu suggests; start `zsh` for the current session instead.
+   `apply` prints the exact `[ACTION]` line; for zsh it is:
+
+   ```bash
+   chsh -s /usr/bin/zsh
+   ```
+
+   It asks for your Linux password. Open a new terminal and check with `echo $SHELL`.
+   For fish, `apply` also prints the line that adds its Homebrew path to
+   `/etc/shells`, which `chsh` requires.
+2. **Enrol this machine's SSH key** at GitHub, twice (see "Enrol this machine's SSH
+   key" below).
 
 ## New machine (WSL, run by setup-dev-win)
 
@@ -64,6 +84,9 @@ interactive prompt instead, or edited into `[data] gitName` afterwards: re-runs 
 pass the recorded name back through those flags. Keep checkouts in the Linux filesystem: `script/verify`
 fails if it finds git repositories under `/mnt`. The one exception is the Windows host
 repository (origin ending in `/setup-dev-win`), which has to live on Windows (ADR-012).
+
+The two steps in "After the first apply" apply here too: run `wsl -d dev`, then
+`chsh -s /usr/bin/zsh`, and enrol the SSH key.
 
 ## Re-running safely
 

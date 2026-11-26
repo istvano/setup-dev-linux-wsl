@@ -42,9 +42,9 @@ fi
 # Printed, never run. zsh is a distro package and already listed in /etc/shells. A
 # Homebrew shell is not, and chsh refuses an unlisted shell, so it needs the first line.
 if [[ "$selected_path" == /usr/bin/* ]]; then
-  echo "[INFO] Login shell is $current; to make $SELECTED the login shell, run: chsh -s $selected_path" >&2
+  echo "[ACTION] Login shell is $current, so new terminals skip your $SELECTED setup. Run once: chsh -s $selected_path" >&2
 else
-  echo "[INFO] Login shell is $current; to make $SELECTED the login shell, run:" >&2
+  echo "[ACTION] Login shell is $current, so new terminals skip your $SELECTED setup. Run once:" >&2
   echo "  echo $selected_path | sudo tee -a /etc/shells" >&2
   echo "  chsh -s $selected_path" >&2
 fi
