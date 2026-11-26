@@ -252,6 +252,46 @@ run_vendor --profiles runtime-docker --target linux
 [[ "$STATUS" -eq 0 ]] || fail "a drifted managed source should be rewritten: $OUT"
 grep -qxF 'Suites: resolute' "$tmp/root/sources.list.d/docker.sources" || fail "the managed source was not rewritten"
 
+# An unmanaged file at our own path is backed up (under a name APT ignores) before it
+# is replaced, and the backup keeps its content. Our own managed file needs no backup.
+fresh
+printf 'Types: deb\nURIs: https://download.docker.com/linux/ubuntu\nSuites: resolute\nComponents: stable\nSigned-By: %s/docker.asc\n' "$tmp/root/keyrings" \
+  >"$tmp/root/sources.list.d/docker.sources"
+cp "$tmp/root/sources.list.d/docker.sources" "$tmp/vendor-original"
+run_vendor --profiles runtime-docker --target linux
+[[ "$STATUS" -eq 0 ]] || fail "an unmanaged docker.sources with our Signed-By should be replaced: $OUT"
+[[ "$(sed -n 1p "$tmp/root/sources.list.d/docker.sources")" == '# Managed by'* ]] || fail "the unmanaged docker.sources was not replaced"
+bk="$(find "$tmp/root/sources.list.d" -name 'docker.sources.*.bak')"
+[[ -n "$bk" && "$(wc -l <<<"$bk" | tr -d ' ')" -eq 1 ]] || fail "expected exactly one docker.sources.<UTC>.bak backup, found: $bk"
+cmp -s "$bk" "$tmp/vendor-original" || fail "the backup does not hold the original content"
+grep -q "sudo cp -p .*docker.sources" "$tmp/fake.log" || fail "the backup must preserve attributes with cp -p"
+[[ "$OUT" == *"Backed up"* ]] || fail "the backup should be logged: $OUT"
+# APT only reads *.list and *.sources, and skips a name ending .bak without a notice.
+run_vendor --profiles runtime-docker --target linux --check
+[[ "$STATUS" -eq 0 ]] || fail "the backup must not be scanned as a source: $OUT"
+fresh
+run_vendor --profiles runtime-docker --target linux
+sed -i.orig 's/^Suites: .*/Suites: noble/' "$tmp/root/sources.list.d/docker.sources"
+rm -f "$tmp/root/sources.list.d/docker.sources.orig"
+run_vendor --profiles runtime-docker --target linux
+[[ -z "$(find "$tmp/root/sources.list.d" -name '*.bak')" ]] || fail "our own managed file must not be backed up"
+
+# An unreadable source file stops the run in both modes: a conflict cannot be ruled out.
+# chmod 000 does not block root, so this one case is skipped there.
+if [[ "$(id -u)" -ne 0 ]]; then
+  fresh
+  printf 'deb [signed-by=/x] https://example.invalid/repo stable main\n' >"$tmp/root/sources.list.d/other.list"
+  chmod 000 "$tmp/root/sources.list.d/other.list"
+  run_vendor --profiles runtime-docker --target linux
+  [[ "$STATUS" -ne 0 && "$OUT" == *other.list* && "$OUT" == *"Cannot read"* ]] || fail "an unreadable source should stop the run: $OUT"
+  [[ "$(sudo_calls)" -eq 0 && "$(written)" -eq 1 ]] || fail "nothing may be written when a source is unreadable"
+  run_vendor --profiles runtime-docker --target linux --check
+  [[ "$STATUS" -ne 0 && "$OUT" == *"Cannot read"* ]] || fail "--check should also refuse an unreadable source: $OUT"
+  chmod 644 "$tmp/root/sources.list.d/other.list"
+else
+  echo 'SKIP: running as root; the unreadable-source assertion needs a non-root user'
+fi
+
 # --check: reports missing packages and drift, exits 1, never calls sudo or gpg.
 fresh
 run_vendor --profiles runtime-docker,ai-agents --target linux --check

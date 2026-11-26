@@ -16,8 +16,13 @@
 # Nothing is ever uninstalled or removed (repository convention). Keys come only from
 # the committed files: no network fetch, no legacy trust store, no downloaded script.
 #
-# Overridable for tests: APT_VENDOR_LIST, APT_VENDOR_KEYS, APT_KEYRING_DIR,
-# APT_SOURCES_DIR, APT_SOURCES_LIST, OS_RELEASE_FILE.
+# A file at one of our own .sources paths that this script did not write (Docker's own
+# instructions create /etc/apt/sources.list.d/docker.sources) is first copied to
+# <id>.sources.<UTC timestamp>.bak, a name APT ignores silently, then replaced. An
+# unreadable source file stops the run: a conflict cannot be ruled out.
+#
+# Test-only overrides; do not set in normal use: APT_VENDOR_LIST, APT_VENDOR_KEYS,
+# APT_KEYRING_DIR, APT_SOURCES_DIR, APT_SOURCES_LIST, OS_RELEASE_FILE.
 set -Eeuo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 # shellcheck source=script/lib/common.sh
@@ -173,6 +178,7 @@ conflicts() {
   own="$SOURCES_DIR/${R_ID[$i]}.sources"
   for file in "$SOURCES_DIR"/*.sources "$SOURCES_DIR"/*.list "$SOURCES_LIST"; do
     [[ -f "$file" ]] || continue
+    [[ -r "$file" ]] || die "Cannot read $file; cannot rule out a conflicting Signed-By."
     if [[ "$file" == "$own" && "$(head -n1 "$file")" == "$MARKER" ]]; then
       continue
     fi
@@ -274,6 +280,11 @@ for i in "${!R_ID[@]}"; do
   dst="$SOURCES_DIR/${R_ID[$i]}.sources"
   render "$i" >"$tmp/${R_ID[$i]}.sources"
   if ! cmp -s "$tmp/${R_ID[$i]}.sources" "$dst" 2>/dev/null; then
+    if [[ -e "$dst" && "$(head -n1 "$dst")" != "$MARKER" ]]; then
+      backup="$dst.$(date -u +%Y%m%dT%H%M%SZ).bak"
+      sudo cp -p "$dst" "$backup"
+      log "Backed up unmanaged $dst to $backup"
+    fi
     sudo install -m 0644 "$tmp/${R_ID[$i]}.sources" "$dst"
     log "Wrote $dst"
     changed=1
