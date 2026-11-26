@@ -2,7 +2,8 @@
 # Configure Docker Engine on the linux target (profile runtime-docker). The packages
 # themselves come from script/apt-vendor; this script owns what surrounds them.
 #   script/docker-setup --profiles CSV --remove-conflicts [--check]
-#       remove docker.io and podman-docker (and only those) when installed. Runs BEFORE
+#       remove docker.io and podman-docker when installed. apt-get may also remove packages
+#       that depend on them; it reports what it removes. Runs BEFORE
 #       apt-vendor so docker-ce never has to be resolved against them (ruling R5).
 #   script/docker-setup --profiles CSV [--check]
 #       the above, then /etc/docker/daemon.json, dockerd enabled and running, and the
@@ -14,9 +15,13 @@
 # container. It takes effect at the next login. The daemon runs rootful under systemd
 # and publishes ports on every interface unless a project binds them to 127.0.0.1;
 # that is the operator's decision for this target, so daemon.json sets only the log
-# driver. A replaced daemon.json is first copied to daemon.json.backup.<UTC timestamp>.
+# driver. daemon.json counts as in place when it is a JSON object whose "log-driver" is
+# "local" (python3 parses it), so keys that other tools add survive: `nvidia-ctk runtime
+# configure --runtime=docker` adds "runtimes". Without python3 it must equal the content
+# below exactly. Any other daemon.json is first copied to
+# daemon.json.backup.<UTC timestamp>, then replaced.
 #
-# Overridable for tests: DOCKER_DAEMON_JSON, DOCKER_SETUP_USER.
+# Test-only overrides; do not set in normal use: DOCKER_DAEMON_JSON, DOCKER_SETUP_USER.
 set -Eeuo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 # shellcheck source=script/lib/common.sh
@@ -81,7 +86,20 @@ in_docker_group() {
 }
 
 daemon_json_matches() {
-  [[ -f "$DAEMON_JSON" && "$(cat "$DAEMON_JSON")" == "$DAEMON_JSON_CONTENT" ]]
+  [[ -f "$DAEMON_JSON" ]] || return 1
+  if command_exists python3; then
+    python3 - "$DAEMON_JSON" <<'PY'
+import json, sys
+try:
+    with open(sys.argv[1]) as f:
+        data = json.load(f)
+except (OSError, ValueError):
+    sys.exit(1)
+sys.exit(0 if isinstance(data, dict) and data.get("log-driver") == "local" else 1)
+PY
+  else
+    [[ "$(cat "$DAEMON_JSON")" == "$DAEMON_JSON_CONTENT" ]]
+  fi
 }
 
 dockerd_enabled() { systemctl is-enabled --quiet docker 2>/dev/null; }
@@ -95,7 +113,7 @@ if ((check)); then
   done < <(installed_conflicts)
   if ((! conflicts_only)); then
     daemon_json_matches || {
-      printf 'drift: %s is missing or is not exactly %s\n' "$DAEMON_JSON" "$DAEMON_JSON_CONTENT"
+      printf 'drift: %s is missing, invalid, or its log-driver is not local (expected %s)\n' "$DAEMON_JSON" "$DAEMON_JSON_CONTENT"
       drift=1
     }
     dockerd_enabled || {

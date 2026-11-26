@@ -101,7 +101,7 @@ for mode in '' --check --remove-conflicts; do
     fail "runtime-docker not selected: '$mode' must do nothing: $OUT"
 done
 
-# --remove-conflicts removes exactly the installed conflicting packages, and nothing else.
+# --remove-conflicts asks apt-get to remove only the installed conflicting packages.
 fresh
 printf 'docker.io\nvim\n' >"$tmp/installed"
 run --profiles "$PROF" --remove-conflicts
@@ -109,7 +109,7 @@ run --profiles "$PROF" --remove-conflicts
 grep -qx 'sudo apt-get remove -y docker.io' "$LOG" || fail "docker.io was not removed alone: $(cat "$LOG")"
 [[ "$(sudo_calls)" -eq 1 ]] || fail "--remove-conflicts made other sudo calls: $(cat "$LOG")"
 [[ ! -e "$tmp/etc/docker/daemon.json" && ! -e "$tmp/state/enabled" ]] || fail "--remove-conflicts must not configure docker"
-grep -qx vim "$tmp/installed" || fail "an unrelated package was removed"
+grep -qx vim "$tmp/installed" || fail "an unrelated package was removed by the fake apt-get"
 : >"$LOG"
 run --profiles "$PROF" --remove-conflicts
 [[ "$STATUS" -eq 0 && "$(sudo_calls)" -eq 0 ]] || fail "--remove-conflicts again should do nothing: $OUT"
@@ -160,6 +160,29 @@ bk="$(find "$tmp/etc/docker" -name 'daemon.json.backup.*')"
 [[ -n "$bk" && "$(cat "$bk")" == '{"log-driver": "json-file"}' ]] || fail "the old daemon.json was not backed up intact"
 grep -qx 'sudo systemctl restart docker' "$LOG" || fail "a running dockerd must restart for the new config: $(cat "$LOG")"
 refute_match 'usermod|enable --now' "$LOG"
+
+# daemon.json that is a superset with log-driver local (nvidia-ctk adds "runtimes")
+# matches: no write, no restart. Another log-driver or invalid JSON does not.
+fresh
+mkdir -p "$tmp/etc/docker"
+printf '{"runtimes": {"nvidia": {"path": "nvidia-container-runtime"}}, "log-driver": "local"}\n' >"$tmp/etc/docker/daemon.json"
+touch "$tmp/state/enabled" "$tmp/state/active"
+printf 'alice\n' >"$tmp/state/members"
+run --profiles "$PROF" --check
+[[ "$STATUS" -eq 0 && "$OUT" != *drift* ]] || fail "a superset with log-driver local should match: $OUT"
+run --profiles "$PROF"
+[[ "$STATUS" -eq 0 && "$(sudo_calls)" -eq 0 ]] || fail "a superset must cause no write and no restart: $(cat "$LOG")"
+grep -q nvidia "$tmp/etc/docker/daemon.json" || fail "the superset daemon.json was modified"
+for bad in '{"runtimes": {}, "log-driver": "json-file"}' '{"runtimes": {}}' 'not json' '["log-driver", "local"]' ''; do
+  printf '%s\n' "$bad" >"$tmp/etc/docker/daemon.json"
+  run --profiles "$PROF" --check
+  [[ "$STATUS" -eq 1 && "$OUT" == *daemon.json* ]] || fail "'$bad' must not match: $OUT"
+done
+printf 'not json\n' >"$tmp/etc/docker/daemon.json"
+run --profiles "$PROF"
+[[ "$(cat "$tmp/etc/docker/daemon.json")" == "$JSON" ]] || fail "invalid JSON should be replaced"
+[[ -n "$(find "$tmp/etc/docker" -name 'daemon.json.backup.*')" ]] || fail "invalid JSON should be backed up first"
+grep -qx 'sudo systemctl restart docker' "$LOG" || fail "replacing daemon.json must restart a running dockerd"
 
 # The group is added only when missing, and only for this user.
 fresh
