@@ -38,6 +38,10 @@ phasing (section 9).
 
 ## Milestone 1 follow-ups
 
+- [ ] Telemetry audit of GitHub Copilot CLI (ADR-016 item 11): find a documented,
+      verified opt-out, then set it in the shell and record it in ADR-006, or record that
+      none exists.
+
 - [ ] Align host and CI linter versions. shfmt is pinned v3.13.1 in CI but floats with
       Homebrew on the host; shellcheck is apt 0.9.0 in CI against 0.11.0 on the host
       (SC2015 passed locally and failed in CI). Options: pin shellcheck in CI from its

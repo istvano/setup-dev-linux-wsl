@@ -43,7 +43,8 @@ repo stays on 26.04):
 
 Status: accepted. Spec section 3.
 
-apt supplies the small base and vendor repos (Docker, NVIDIA, Anthropic). Homebrew on
+apt supplies the small base and vendor repos (Docker, NVIDIA, Anthropic, Microsoft,
+Google). Homebrew on
 Linux supplies CLI tools through composable profile Brewfiles, keeping the macOS
 repo's profile model. mise manages language runtimes and uv manages Python.
 
@@ -263,7 +264,7 @@ following Homebrew's latest; pin it with mise if clusters fall more than one min
 Status: accepted, 2026-11-26, after a Mac, Windows and WSL parity comparison.
 
 1. **Go telemetry off.** `run_after_31_telemetry-optout` ports setup-dev-mac's
-   hook 31 (Go and aider; gcloud is absent here). Go's telemetry defaults to local-only
+   hook 31 (Go and aider; gcloud was added by ADR-016 item 11). Go's telemetry defaults to local-only
    counters, so `go telemetry off` declines to collect at all. The hook finds go with
    `mise which go`, never `mise exec`, because `exec` installs a missing toolchain and a
    telemetry opt-out must not download one; it is a no-op when already off and never
@@ -323,8 +324,14 @@ over to this repository.
    and ChatGPT. So repositories of one vendor share one keyring, and the Anthropic keyring
    is named `anthropic` so a host repository can reuse the same file. `script/apt-vendor`
    scans every existing source for the same URI under another `Signed-By` and stops before
-   writing anything, naming the file; it never removes or edits files it did not write.
-   Files it wrote start with a marker line and are rewritten on the next apply.
+   writing anything, naming the file; an unreadable source file stops the run too, because
+   a conflict cannot then be ruled out. It never removes a file it did not write. Files it
+   wrote start with a marker line and are rewritten on the next apply. The one exception
+   is a file at one of its own `<id>.sources` paths that lacks the marker (Docker's own
+   instructions write `docker.sources`): it is first copied with `cp -p` to
+   `<id>.sources.<UTC timestamp>.bak`, then replaced, and the copy is logged. APT ignores
+   that name silently: `.bak$` is in its default `Dir::Ignore-Files-Silently` list, and
+   `sources.list.d` is read only for names ending `.list` or `.sources`.
 3. **Suites.** `vendor.list` carries the suite per repository: a literal, or `@codename`
    for the machine's `VERSION_CODENAME`. Checked against the vendors' Release indexes on
    2026-11-26: Docker and azure-cli publish `resolute` (Ubuntu 26.04); Google (`cloud-sdk`)
@@ -345,11 +352,15 @@ over to this repository.
    has to resolve them; the list is for a fresh machine, and `containerd.io` itself
    conflicts with the distribution's containerd and runc. Docker's documentation lists
    more (`docker-doc`, `docker-compose`, `docker-compose-v2`); extend the list if a
-   non-fresh machine hits a file conflict. `/etc/docker/daemon.json` is replaced
-   wholesale with `{"log-driver": "local"}`: an existing file is first copied to
-   `daemon.json.backup.<UTC timestamp>`, and a changed file restarts a running docker,
-   which stops running containers. Settings you had there are not merged; take them from
-   the backup. The operator is added to the `docker` group.
+   non-fresh machine hits a file conflict. `/etc/docker/daemon.json` counts as in place
+   when it is a JSON object whose `"log-driver"` is `"local"` (parsed with python3; without
+   python3 it must equal `{"log-driver": "local"}` exactly), so keys other tools add are
+   kept: `nvidia-ctk runtime configure --runtime=docker`, which adds `runtimes.nvidia`
+   (the `gpu-nvidia` step), is compatible and is not reverted. Any other file is first
+   copied to `daemon.json.backup.<UTC timestamp>`, then replaced with
+   `{"log-driver": "local"}`, and a running docker is restarted, which stops running
+   containers. Settings in a replaced file are not merged; take them from the backup. The
+   operator is added to the `docker` group.
 7. **Docker's ports are reachable from the network on this target.** That is the
    operator's decision. No loopback binding is configured, so a published port without a
    `127.0.0.1` host part listens on every interface. This differs from the container
@@ -368,12 +379,23 @@ over to this repository.
    authenticates with the operator's own `copilot` then `/login`; nothing is stored.
 10. **Other items moved from `setup-dev-linux`.** `azure-cli` (`cloud-azure`) and
     `google-cloud-cli` (`cloud-gcp`), both macOS-only casks in homebrew-core (ADR-010);
+    `skopeo` in `runtime-docker`, the one formula of an otherwise empty vendor-apt
+    fragment (daemonless image inspect and copy; it needs no daemon or privilege);
     `midnight-commander` and `fastfetch` in `core`, `cilium-cli` and `hubble` in
     `kubernetes`; `vim` in `apt/base.list` (nvim stays the default editor). The NVIDIA
     Container Toolkit is in the opt-in `gpu-nvidia` profile, not part of every Docker
     install. The default profiles stay under the ADR-008 cap. What stays in
     `setup-dev-linux` (desktop applications and their repositories, snaps, GNOME, drivers,
     VS Code extensions) is not carried over.
+
+11. **Telemetry posture** (ADR-006: no tool reports our usage to its vendor, verified
+    opt-outs only). gcloud: hook 31 now runs `gcloud config set disable_usage_reporting
+    true` when gcloud is present, the verified opt-out `setup-dev-mac` uses (ADR-046 there).
+    Claude Code: OpenTelemetry export is opt-in via `CLAUDE_CODE_ENABLE_TELEMETRY`; it is
+    left unset, which is the off state, and no variable is set on the chance that it
+    helps. GitHub Copilot CLI: not yet audited, so nothing is set and no claim is made
+    about it (TASKS.md). Docker Engine, skopeo and the NVIDIA Container Toolkit were not
+    audited either; none is known to report usage.
 
 Rejected: Docker's convenience script (`get.docker.com`, a download-and-run script);
 Ubuntu's `docker.io` (older, and it conflicts with docker-ce); rootless Docker (a different

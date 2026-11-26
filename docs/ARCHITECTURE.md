@@ -48,7 +48,8 @@ ai-agents, gpu-nvidia (ADR-010). Each is a `profiles/<name>.Brewfile` fragment o
 formulae only. `gcloud`, `azure-cli`, Docker Engine, Claude Code and the NVIDIA
 Container Toolkit come from signed vendor apt repositories (`apt/vendor.list`,
 `script/apt-vendor`), so the fragments of runtime-docker, ai-agents, cloud-gcp and
-gpu-nvidia are empty. runtime-docker and gpu-nvidia are refused on `--target wsl`
+gpu-nvidia are empty, except that runtime-docker carries one formula, `skopeo` (a
+daemonless registry client). runtime-docker and gpu-nvidia are refused on `--target wsl`
 until the WSL integration milestone. On the linux target Docker's published ports are
 reachable from the network by operator decision (ADR-016). Tools and
 approaches that were considered and refused are recorded in [DROPPED.md](DROPPED.md).

@@ -71,9 +71,15 @@ Docker on the linux target, and what to know before using it:
   not filter them, because Docker writes its own iptables rules. Bind a port to
   `127.0.0.1` in the project's compose file (`127.0.0.1:8080:80`) when it must stay
   local.
-- `/etc/docker/daemon.json` is replaced with `{"log-driver": "local"}`. The previous file
-  is kept as `daemon.json.backup.<UTC timestamp>`, and a running docker is restarted,
-  which stops its containers.
+- `/etc/docker/daemon.json` is left alone when it is a JSON object whose `log-driver` is
+  `local`, so extra keys survive (`sudo nvidia-ctk runtime configure --runtime=docker`
+  from the `gpu-nvidia` step adds `runtimes` and is compatible). Any other file is
+  replaced with `{"log-driver": "local"}`; the previous one is kept as
+  `daemon.json.backup.<UTC timestamp>`, and a running docker is restarted, which stops
+  its containers.
+- A `docker.sources` that Docker's own instructions wrote is backed up as
+  `docker.sources.<UTC timestamp>.bak` in `/etc/apt/sources.list.d/` (APT ignores the
+  name) before the managed one replaces it.
 
 Check the vendor sources without changing anything:
 
