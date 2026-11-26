@@ -8,8 +8,12 @@
 #
 # Settings: {{ range $i, $s := (list "go-telemetry-off" "aider-analytics-disable") }}{{ if $i }} {{ end }}{{ $s }}{{ end }}
 #
-# That line is load-bearing: run_onchange hashes the rendered script, so listing the
-# settings in the body is what makes this hook re-run when the list changes.
+# This is run_after_, not run_onchange_, on purpose (ADR-015). The hook exits 0 even when a
+# step fails, and chezmoi records a run_onchange_ script as done on exit 0, so an offline
+# first apply (aider not yet installed by hook 29) would mark it done and never retry. Run
+# on every apply, it self-heals: each step is a guarded no-op when the setting is already
+# correct (`mise which`, a marker file), so a re-apply is silent and costs no network.
+# The settings line above only documents what the hook covers.
 #
 # Every step is guarded on the tool being present and is a no-op when the setting is
 # already correct, so a re-apply is silent and costs no network.

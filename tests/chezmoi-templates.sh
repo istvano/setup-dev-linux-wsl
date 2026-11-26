@@ -347,7 +347,7 @@ krew_hook "$TMP/krew-none"
 # --- ADR-015: the uv-tools hook (aider) and the telemetry hook (Go, aider), run for
 # real against stubs. Never fatal; no toolchain download just to answer a question.
 UVTOOLS_HOOK="$ROOT/chezmoi/run_onchange_after_29_uv-tools.sh.tmpl"
-TELEMETRY_HOOK="$ROOT/chezmoi/run_onchange_after_31_telemetry-optout.sh.tmpl"
+TELEMETRY_HOOK="$ROOT/chezmoi/run_after_31_telemetry-optout.sh.tmpl"
 sed 's|^profiles = .*|profiles = ["core"]|' "$ROOT/tests/fixtures/chezmoi/linux.toml" >"$TMP/core-only.toml"
 [[ -z "$(render "$TMP/core-only.toml" "$UVTOOLS_HOOK" | tr -d '[:space:]')" ]] || {
   echo 'uv-tools hook renders without the dev profile.' >&2
@@ -361,6 +361,13 @@ render linux.toml "$TELEMETRY_HOOK" >"$TMP/telemetry.sh"
 }
 grep -v '^[[:space:]]*#' "$TMP/telemetry.sh" >"$TMP/telemetry.code"
 refute_match 'mise exec' "$TMP/telemetry.code"
+# Retry reasoning (ADR-015): hooks 29 and 31 exit 0 on failure, so as run_onchange_ they would
+# be recorded as done after an offline first apply. The telemetry hook is cheap and
+# idempotent, so it is run_after_ and re-checks on every apply.
+[[ "$(basename "$TELEMETRY_HOOK")" == run_after_* ]] || {
+  echo 'telemetry hook must be run_after_, not run_onchange_ (it never fails, so it would never retry).' >&2
+  exit 1
+}
 assert_match 'mise which go' "$TMP/telemetry.sh"
 assert_match 'uv tool install' "$TMP/uvtools.sh"
 refute_match 'aider-chat==' "$TMP/uvtools.sh" # ADR-011: latest stable, no pin (comments say so without the spelling)
@@ -403,8 +410,8 @@ STUB
 printf '#!/bin/sh\nexit 1\n' >"$STUBS/mise-none/mise"
 cat >"$STUBS/aider/aider" <<'STUB'
 #!/bin/sh
-# stub: refuses to run with stdin attached, as the real one stalls on OpenRouter login
-[ -t 0 ] && exit 1
+# stub: fails unless stdin is /dev/null, as the real one stalls on an OpenRouter login
+[ /dev/fd/0 -ef /dev/null ] || exit 1
 mkdir -p "$HOME/.aider"
 echo '{"permanently_disable": true}' >"$HOME/.aider/analytics.json"
 exit 1
@@ -462,7 +469,15 @@ hook_run "$TMP/telemetry.sh" "$STUBS/mise-none"
   printf 'telemetry hook must exit 0 when mise cannot find go (rc %s):\n%s\n' "$rc" "$hook_out" >&2
   exit 1
 }
-hook_run "$TMP/telemetry.sh" "$STUBS/aider"
+# A non-interactive bash already gives a backgrounded command /dev/null as stdin, so the
+# behavioural run below cannot see the redirection being deleted; assert it statically.
+assert_match 'aider --analytics-disable --exit </dev/null' "$TMP/telemetry.code"
+# The hook is run with an OPEN stdin (a pipe that stays open), so only its own </dev/null
+# can satisfy the stub; deleting that redirection from the hook makes this fail.
+rm -rf "$TMP/uhome"
+mkdir -p "$TMP/uhome"
+rc=0
+hook_out="$(sleep 2 | HOME="$TMP/uhome" GO_LOG="$TMP/go.log" MISE_LOG="$TMP/mise.log" PATH="$STUBS/aider:/usr/bin:/bin" "$BASH_BIN" "$TMP/telemetry.sh" 2>&1)" || rc=$?
 if ! { [[ "$rc" == 0 ]] && grep -q 'permanently_disable' "$TMP/uhome/.aider/analytics.json"; }; then
   printf 'telemetry hook did not record the aider opt-out (rc %s):\n%s\n' "$rc" "$hook_out" >&2
   exit 1

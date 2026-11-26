@@ -261,20 +261,26 @@ following Homebrew's latest; pin it with mise if clusters fall more than one min
 
 Status: accepted, 2026-11-26, after a Mac, Windows and WSL parity comparison.
 
-1. **Go telemetry off.** `run_onchange_after_31_telemetry-optout` ports setup-dev-mac's
+1. **Go telemetry off.** `run_after_31_telemetry-optout` ports setup-dev-mac's
    hook 31 (Go and aider; gcloud is absent here). Go's telemetry defaults to local-only
    counters, so `go telemetry off` declines to collect at all. The hook finds go with
    `mise which go`, never `mise exec`, because `exec` installs a missing toolchain and a
    telemetry opt-out must not download one; it is a no-op when already off and never
    fatal, because chezmoi stops at the first failing script. A test runs it against a stub
-   mise that rejects every subcommand but `which go`.
+   mise that rejects every subcommand but `which go`. It is `run_after_`, not
+   `run_onchange_`: because it exits 0 on failure, chezmoi would record it as done after an
+   offline first apply (aider not yet installed) and never apply the aider opt-out later.
+   Cheap and idempotent (`mise which`, a marker file, no network once set), it re-checks on
+   every apply and so self-heals. Hook 29 stays `run_onchange_`; a missed install is retried
+   by the next apply that changes the list, or by `uv tool install` by hand.
 2. **nvim and bat configuration.** `dot_config/nvim/init.lua` (plugin-free, built-in
    options only) and `dot_config/bat/config` (Catppuccin Mocha, built in to bat) are
    ported unchanged except for the clipboard. Under WSL (`vim.fn.has("wsl")`) nvim sets
-   `vim.g.clipboard` to `clip.exe` for copy and `powershell.exe -NoProfile -Command
-   Get-Clipboard` for paste, stripping the CR from each line; elsewhere neovim finds its
-   own provider. The bridge needs both executables by bare name, which
-   `appendWindowsPath=false` will remove (TASKS.md).
+   `vim.g.clipboard`: `clip.exe` for copy and `powershell.exe -NoProfile -Command
+   Get-Clipboard -Raw` (UTF-8 output, CR stripped) for paste. Both are taken from
+   `/mnt/c/Windows/System32` when present, so the bridge survives `appendWindowsPath=false`;
+   bare names are the fallback. clip.exe reads the console code page, so non-ASCII copy may
+   be garbled (noted in the file). Elsewhere neovim finds its own provider.
 3. **aider.** `run_onchange_after_29_uv-tools` runs `uv tool install --force --python 3.12
    aider-chat` for the dev profile, as the Mac does, but UNPINNED: ADR-011 installs the
    latest stable, whereas the Mac pins with `==`. An installed aider is left alone, so a

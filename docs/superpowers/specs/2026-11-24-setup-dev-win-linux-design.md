@@ -6,13 +6,13 @@
 >
 > | Stale statement in this document | What was implemented | Decision |
 > |---|---|---|
-> | Exact pinned versions for runtimes and CLIs, and a pinned chezmoi | The latest stable version of every runtime and CLI (`"latest"`, `lts`, `stable` in the mise config, Homebrew's current chezmoi); only CI's tools and GitHub Actions stay pinned | ADR-011 |
+> | Exact pinned versions for runtimes and CLIs | The latest stable version of every runtime and CLI (`"latest"`, `lts`, `stable` in the mise config); only CI's tools and GitHub Actions stay pinned | ADR-011 |
 > | Section 8.2: the LM Studio relay, with no start-up mechanism fixed | `llm-relay`, an on-demand socat-to-PowerShell bridge the operator starts in a terminal; nothing on a network interface | ADR-013 |
 > | The `/mnt` repository check refuses every repository on `/mnt` | The Windows host's own `setup-dev-win` checkout is exempt, by origin URL read with `git config --file` | ADR-012 |
 > | Section 7.5 dotfiles without the old Linux repository's proxy helpers, git shortcuts or Java 25 default | Git shortcuts as aliases and abbreviations, `proxyon`/`proxyoff`, Java 25 default, a shipped global gitignore | ADR-014 |
 > | Section 8.4: telemetry opt-outs are environment variables | Plus a hook that turns Go telemetry off and records aider's analytics opt-out; aider installed through uv, unpinned | ADR-015 |
 > | Section 7.5: nvim and bat configuration not listed | nvim and bat configuration ported, with a WSL clipboard bridge through `clip.exe` and PowerShell | ADR-015 |
-> | Windows-side rows (WinGet, PowerShell pin, distro placement, handoff, image cache) | See setup-dev-win's copy of this document | its ADR-008 to ADR-025 |
+> | Windows-side rows (WinGet, PowerShell pin, distro placement, handoff, image cache) | See setup-dev-win's copy of this document | its ADR-003 and ADR-008 to ADR-025 |
 
 Date: 2026-11-24
 Status: draft for approval

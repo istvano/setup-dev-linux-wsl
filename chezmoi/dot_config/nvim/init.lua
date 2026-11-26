@@ -24,15 +24,40 @@ local opt = vim.opt
 opt.clipboard = "unnamedplus"
 
 -- Under WSL there is no X or Wayland session for neovim to find a provider in, so without
--- help the line above would warn on every yank. Bridge to Windows through interop instead:
--- clip.exe copies, and Windows PowerShell's Get-Clipboard pastes. Get-Clipboard ends lines
--- with CRLF, so the paste side strips the carriage returns; leaving them in puts a ^M at
--- the end of every pasted line. -NoProfile keeps the paste fast and independent of
--- whatever the Windows profile does. vim.fn.has("wsl") is neovim's own detection, so this
--- never applies to a plain Linux machine, where neovim finds wl-clipboard or xclip itself.
+-- help the line above would warn on every yank. Bridge to Windows through interop instead.
+-- vim.fn.has("wsl") is neovim's own detection, so this never applies to a plain Linux
+-- machine, where neovim finds wl-clipboard or xclip itself.
+--
+-- The executables are taken from their absolute /mnt/c paths when present, so the bridge
+-- survives `appendWindowsPath=false`, which removes the Windows directories from PATH; the
+-- bare names are the fallback for a Windows installed elsewhere.
+--
+-- Paste: Windows PowerShell's `Get-Clipboard -Raw`, with the console output encoding set to
+-- UTF-8 so non-ASCII text is not mangled, and the CR of each CRLF stripped (left in, they
+-- show as ^M at the end of every pasted line).
+--
+-- Copy: clip.exe. It reads its input in the console's code page, so non-ASCII text may be
+-- garbled on copy. A UTF-8-safe copy would pipe through PowerShell's Set-Clipboard reading
+-- UTF-8 stdin; that is not done here because it costs a PowerShell start-up on every yank.
 if vim.fn.has("wsl") == 1 then
+  local function windows_exe(absolute, bare)
+    if vim.fn.executable(absolute) == 1 then
+      return absolute
+    end
+    return bare
+  end
+  local clip = windows_exe("/mnt/c/Windows/System32/clip.exe", "clip.exe")
+  local powershell = windows_exe(
+    "/mnt/c/Windows/System32/WindowsPowerShell/v1.0/powershell.exe",
+    "powershell.exe"
+  )
   local paste = function()
-    local lines = vim.fn.systemlist("powershell.exe -NoProfile -Command Get-Clipboard")
+    local lines = vim.fn.systemlist({
+      powershell,
+      "-NoProfile",
+      "-Command",
+      "[Console]::OutputEncoding=[Text.Encoding]::UTF8; Get-Clipboard -Raw",
+    })
     for i, line in ipairs(lines) do
       lines[i] = line:gsub("\r", "")
     end
@@ -40,7 +65,7 @@ if vim.fn.has("wsl") == 1 then
   end
   vim.g.clipboard = {
     name = "wsl-interop",
-    copy = { ["+"] = "clip.exe", ["*"] = "clip.exe" },
+    copy = { ["+"] = { clip }, ["*"] = { clip } },
     paste = { ["+"] = paste, ["*"] = paste },
     cache_enabled = 0,
   }
