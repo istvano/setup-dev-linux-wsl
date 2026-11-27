@@ -162,7 +162,7 @@ for file in "$ZSHRC" "$FISHRC" "$LOGIN_HOOK" "$ROOT/chezmoi/dot_config/starship.
 done
 
 # ADR-015: nvim shares the clipboard on WSL through clip.exe and PowerShell (CR stripped);
-# bat's Catppuccin Mocha theme is built in, so no theme file is shipped.
+# bat's Solarized (light) theme is built in, so no theme file is shipped.
 NVIM_INIT="$ROOT/chezmoi/dot_config/nvim/init.lua"
 assert_match 'vim\.g\.clipboard' "$NVIM_INIT"
 assert_match 'clip\.exe' "$NVIM_INIT"
@@ -172,7 +172,7 @@ assert_match 'Get-Clipboard -Raw' "$NVIM_INIT"
 assert_match 'OutputEncoding=\[Text\.Encoding\]::UTF8' "$NVIM_INIT"
 assert_match 'has\("wsl"\)' "$NVIM_INIT"
 assert_match 'opt\.clipboard = "unnamedplus"' "$NVIM_INIT"
-assert_match '^--theme="Catppuccin Mocha"$' "$ROOT/chezmoi/dot_config/bat/config"
+assert_match '^--theme="Solarized \(light\)"$' "$ROOT/chezmoi/dot_config/bat/config"
 
 # macOS-only constructs must not survive the port. Comment lines are filtered out,
 # because the files explain what they replaced.

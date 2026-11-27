@@ -103,7 +103,7 @@ opt.scrolloff = 5
 opt.sidescrolloff = 8
 
 -- True colour, which Windows Terminal supports. Without it the terminal's 256-colour
--- approximation is used and the Catppuccin palette is visibly wrong inside nvim.
+-- approximation is used and the terminal palette (Solarized Light) is visibly wrong inside nvim.
 opt.termguicolors = true
 
 -- Show the effect of :s as it is typed, in a split. Built in since 0.6 and off by default.

@@ -276,7 +276,7 @@ Status: accepted, 2026-11-26, after a Mac, Windows and WSL parity comparison.
    every apply and so self-heals. Hook 29 stays `run_onchange_`; a missed install is retried
    by the next apply that changes the list, or by `uv tool install` by hand.
 2. **nvim and bat configuration.** `dot_config/nvim/init.lua` (plugin-free, built-in
-   options only) and `dot_config/bat/config` (Catppuccin Mocha, built in to bat) are
+   options only) and `dot_config/bat/config` (Solarized (light), built in to bat; ADR-017) are
    ported unchanged except for the clipboard. Under WSL (`vim.fn.has("wsl")`) nvim sets
    `vim.g.clipboard`: `clip.exe` for copy and `powershell.exe -NoProfile -Command
    Get-Clipboard -Raw` (UTF-8 output, CR stripped) for paste. Both are taken from
@@ -401,3 +401,13 @@ Rejected: Docker's convenience script (`get.docker.com`, a download-and-run scri
 Ubuntu's `docker.io` (older, and it conflicts with docker-ce); rootless Docker (a different
 networking model, not evaluated for this target); `apt-key` or `/etc/apt/trusted.gpg.d` (trusts a key for every
 repository).
+
+## ADR-017: Solarized Light terminal palette, bat follows
+
+Status: accepted, 2026-11-27. Supersedes the bat theme named in ADR-015.
+
+The terminal palette is Solarized Light on every machine. `bat` follows with its built-in
+`Solarized (light)` theme (`--theme="Solarized (light)"`, the name printed by
+`bat --list-themes`); Catppuccin Mocha is unreadable on a light background. The theme is
+built in, so there is still no theme file and no `bat cache --build`. `delta` and nvim need
+no setting, because both detect the terminal background. nvim sets no colorscheme.
