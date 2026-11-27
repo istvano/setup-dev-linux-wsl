@@ -8,7 +8,8 @@
 # The catalogue is apt/vendor.list (its header documents the columns); the keys are
 # committed under apt/keys/. For each repository of a selected profile and the current
 # target this installs the key as /etc/apt/keyrings/<key>.asc and writes a deb822
-# /etc/apt/sources.list.d/<id>.sources whose Signed-By is that keyring.
+# /etc/apt/sources.list.d/<id>.sources whose Signed-By is that keyring and whose
+# Architectures is dpkg's native architecture only.
 #
 # Order, so a bad input changes nothing: every key's fingerprint is checked against the
 # catalogue, and every existing APT source is scanned for the same URI under another
@@ -112,6 +113,16 @@ resolve_codename() {
   [[ -n "$codename" ]] || die "No VERSION_CODENAME in $file."
 }
 
+# native_arch: the one architecture APT fetches for these sources, dpkg's own. Ubuntu
+# Desktop enables i386 as a foreign architecture and none of these vendors publish it,
+# so without an Architectures field every apt update prints a notice per repository.
+native_arch() {
+  local arch
+  arch="$(dpkg --print-architecture 2>/dev/null)" || die "dpkg --print-architecture failed."
+  [[ "$arch" =~ ^[a-z0-9]+$ ]] || die "Unexpected dpkg architecture: '$arch'."
+  printf '%s' "$arch"
+}
+
 # render INDEX: print the deb822 source for one repository.
 render() {
   local i="$1" suite="${R_SUITE[$1]}" comps="${R_COMPS[$1]}"
@@ -121,6 +132,7 @@ render() {
   fi
   printf '%s\n' "$MARKER" 'Types: deb' "URIs: ${R_URI[$i]}" "Suites: $suite"
   [[ "$comps" == - ]] || printf 'Components: %s\n' "${comps//,/ }"
+  printf 'Architectures: %s\n' "$(native_arch)"
   printf 'Signed-By: %s/%s.asc\n' "$KEYRING_DIR" "${R_KEY[$i]}"
 }
 

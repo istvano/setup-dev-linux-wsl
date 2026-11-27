@@ -96,6 +96,14 @@ while IFS= read -r fpr; do
   printf 'pub:-:4096:1:ABCDEF:1::-:::scESC::::::23::0:\nfpr:::::::::%s:\nsub:-:4096:1:123456:1::::::e::::::23:\nfpr:::::::::0000000000000000000000000000000000000000:\n' "$fpr"
 done <"$file"
 FAKE
+# dpkg: only the native architecture is asked for.
+cat >"$bin/dpkg" <<'FAKE'
+#!/usr/bin/env bash
+[[ "$*" == --print-architecture ]] || exit 2
+printf 'amd64\n'
+FAKE
+chmod +x "$bin/dpkg"
+
 cat >"$bin/dpkg-query" <<'FAKE'
 #!/usr/bin/env bash
 pkg="${*: -1}"
@@ -144,7 +152,7 @@ run_vendor --profiles core,runtime-docker --target linux
 src="$tmp/root/sources.list.d/docker.sources"
 [[ -f "$src" ]] || fail "docker.sources was not written"
 for expected in 'Types: deb' 'URIs: https://download.docker.com/linux/ubuntu' 'Suites: resolute' \
-  'Components: stable' "Signed-By: $tmp/root/keyrings/docker.asc"; do
+  'Components: stable' 'Architectures: amd64' "Signed-By: $tmp/root/keyrings/docker.asc"; do
   grep -qxF -- "$expected" "$src" || fail "docker.sources lacks the line: $expected"$'\n'"$(cat "$src")"
 done
 cmp -s "$tmp/root/keys-src/docker.asc" "$tmp/root/keyrings/docker.asc" || fail "the docker key was not installed"
