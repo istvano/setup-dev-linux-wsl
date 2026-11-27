@@ -332,6 +332,13 @@ over to this repository.
    `<id>.sources.<UTC timestamp>.bak`, then replaced, and the copy is logged. APT ignores
    that name silently: `.bak$` is in its default `Dir::Ignore-Files-Silently` list, and
    `sources.list.d` is read only for names ending `.list` or `.sources`.
+
+   Each source also carries `Architectures:` with dpkg's native architecture
+   (`dpkg --print-architecture`, `amd64` on the supported machines). Ubuntu Desktop
+   enables `i386` as a foreign architecture and none of these vendors publish it, so
+   without the field every `apt update` printed a notice per repository (observed on the
+   first Ubuntu 26.04 host). An existing source written before this reads as drift
+   until the next apply rewrites it.
 3. **Suites.** `vendor.list` carries the suite per repository: a literal, or `@codename`
    for the machine's `VERSION_CODENAME`. Checked against the vendors' Release indexes on
    2026-11-26: Docker and azure-cli publish `resolute` (Ubuntu 26.04); Google (`cloud-sdk`)
