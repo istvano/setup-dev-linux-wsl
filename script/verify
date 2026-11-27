@@ -2,7 +2,7 @@
 # Report whether this machine matches the repository. Runs every check, prints one line
 # each, exits 1 if any failed. Changes nothing.
 #
-# Usage: script/verify [--target wsl|linux]   (default: detected)
+# Usage: script/verify [--target wsl|linux] [--defer-shell-action]   (target: detected)
 #
 # Profiles and shell are read from the chezmoi data that ./bootstrap recorded, so the
 # package check compares against what this machine was set up with, not against the
@@ -11,14 +11,17 @@
 #
 # Read-only: it writes no file (the package check renders to a temporary file).
 #
-# The login-shell report is informational and never fails: the repository never
-# changes the account login shell.
+# The login-shell report never fails: the repository never changes the account login
+# shell. When it is not the selected shell, the last line is an [ACTION] naming the
+# chsh command to run. bootstrap passes --defer-shell-action and prints that line
+# itself after "bootstrap complete", so it is the last line of an apply too.
 set -Eeuo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 # shellcheck source=script/lib/common.sh
 source "$ROOT/script/lib/common.sh"
 
 target=""
+defer_shell_action=0
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --target)
@@ -26,7 +29,11 @@ while [[ $# -gt 0 ]]; do
       target="$2"
       shift 2
       ;;
-    *) die "Usage: script/verify [--target wsl|linux]" ;;
+    --defer-shell-action)
+      defer_shell_action=1
+      shift
+      ;;
+    *) die "Usage: script/verify [--target wsl|linux] [--defer-shell-action]" ;;
   esac
 done
 [[ -n "$target" ]] || target="$(detect_target)"
@@ -100,10 +107,12 @@ if [[ "$target" == wsl ]]; then
 fi
 
 # Informational: never counted as a failure.
-login_shell="$(getent passwd "$(id -un)" | cut -d: -f7 || true)"
-log "Account login shell: ${login_shell:-unknown} (informational; this repository never changes it)."
+login_shell="${LOGIN_SHELL_OVERRIDE:-$(getent passwd "$(id -un)" | cut -d: -f7 || true)}"
+log "Account login shell: ${login_shell:-unknown} (this repository never changes it)."
 
 if ((failures > 0)); then
+  ((defer_shell_action)) || login_shell_action "$shell_choice"
   die "$failures check(s) failed."
 fi
 success "All checks passed."
+((defer_shell_action)) || login_shell_action "$shell_choice"

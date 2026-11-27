@@ -90,6 +90,16 @@ zsh is the default interactive shell and fish the exclusive alternative. The
 repository reports the account's login shell but never runs `chsh` or edits
 `/etc/shells`; changing it is the operator's decision.
 
+The report used to be easy to miss. The chezmoi hook that prints the `[ACTION]` line is
+`run_onchange`, so it fires once, mid-way through the first apply, and the verify step
+at the end said only `[INFO] Account login shell: /bin/bash (informational…)`. On the
+first Ubuntu 26.04 host that left every new terminal in bash without Homebrew on PATH.
+So `script/lib/common.sh` `login_shell_action` prints the `[ACTION]` and the exact
+`chsh` command (plus the `/etc/shells` line for a Homebrew shell) whenever the login
+shell is not the selected one: as the last line of `script/verify`, and, because
+bootstrap passes `--defer-shell-action`, as the last line of every apply after
+`bootstrap complete`. It is still printed, never run.
+
 ## ADR-008: One tool per job, default-profile cap of 70
 
 Status: accepted. Carried from setup-dev-mac ADR-022.

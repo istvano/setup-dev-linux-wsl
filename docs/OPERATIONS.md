@@ -109,13 +109,16 @@ these stay with you. Do both once per machine.
    switch, every new terminal, including `wsl -d dev`, opens in bash without Homebrew
    on `PATH`, so `chezmoi`, `mise` and the other tools report "command not found". Do
    not install the snap Ubuntu suggests; start `zsh` for the current session instead.
-   `apply` prints the exact `[ACTION]` line; for zsh it is:
+   Until you do, `apply` and `script/verify` end with an `[ACTION]` line naming the
+   exact command; for zsh it is:
 
    ```bash
    chsh -s /usr/bin/zsh
    ```
 
-   It asks for your Linux password. Open a new terminal and check with `echo $SHELL`.
+   It asks for your Linux password. Then log out of the desktop session and back in:
+   GNOME sets `$SHELL` at login, and Ghostty and other terminals start that shell, so a
+   new terminal opened before you log out still runs bash. Check with `echo $SHELL`.
    For fish, `apply` also prints the line that adds its Homebrew path to
    `/etc/shells`, which `chsh` requires.
 2. **Enrol this machine's SSH key** at GitHub, twice (see "Enrol this machine's SSH

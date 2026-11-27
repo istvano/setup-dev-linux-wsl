@@ -186,6 +186,35 @@ default_brewfile_path() {
 # Once a chezmoi config exists it is the record of what this machine was set up with:
 # the template's prompt*Once functions return the stored value and ignore flags. So
 # bootstrap and verify read it rather than guess.
+# login_shell_action SELECTED: print the one command that makes SELECTED the account
+# login shell, or nothing when it already is. Prints, never runs: the repository never
+# changes the login shell (ADR-007). zsh is Ubuntu's /usr/bin/zsh, already listed in
+# /etc/shells; a Homebrew shell (fish) is not, and chsh refuses an unlisted shell, so
+# that case prints the /etc/shells line first. LOGIN_SHELL_OVERRIDE stubs the account
+# database for tests; it is unset in real use.
+login_shell_action() {
+  local selected="$1" current path
+  current="${LOGIN_SHELL_OVERRIDE:-}"
+  [[ -n "$current" ]] || current="$(getent passwd "$(id -un)" | cut -d: -f7 || true)"
+  if [[ -z "$current" ]]; then
+    warn "Could not read the account login shell."
+    return 0
+  fi
+  [[ "$(basename "$current")" != "$selected" ]] || return 0
+  case "$selected" in
+    zsh) path=/usr/bin/zsh ;;
+    *) path="$(command -v "$selected" 2>/dev/null || true)" ;;
+  esac
+  if [[ -z "$path" ]]; then
+    warn "$selected is not on PATH; check that its profile fragment installed."
+    return 0
+  fi
+  printf '%s[ACTION]%s Login shell is %s, so new terminals open without your %s setup (no Homebrew on PATH). Run once, then log out and back in:\n' \
+    "$C_YELLOW" "$C_RESET" "$current" "$selected"
+  [[ "$path" == /usr/bin/* ]] || printf '  echo %s | sudo tee -a /etc/shells\n' "$path"
+  printf '  chsh -s %s\n' "$path"
+}
+
 chezmoi_config_path() {
   printf '%s\n' "${XDG_CONFIG_HOME:-$HOME/.config}/chezmoi/chezmoi.toml"
 }

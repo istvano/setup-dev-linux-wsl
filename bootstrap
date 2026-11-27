@@ -329,5 +329,7 @@ if [[ "$command_name" == plan ]]; then
   log "Plan only: nothing was changed. verify runs at the end of apply."
   exit 0
 fi
-run_step "verify" "$ROOT/script/verify" --target "$target"
+run_step "verify" "$ROOT/script/verify" --target "$target" --defer-shell-action
 success "bootstrap complete."
+# Last, so the one manual step is the last thing on the screen (ADR-007: printed, never run).
+login_shell_action "$shell_choice"
