@@ -314,6 +314,47 @@ assert_match 'backup_file' "$B"
 refute_match 'chezmoi init[^#]*--apply' "$B"
 refute_match 'sudo' "$B"
 refute_match '\bchsh\b' "$B"
+# The login-shell [ACTION] is the last line of an apply: verify defers it, bootstrap
+# prints it after "bootstrap complete" (ADR-007).
+# shellcheck disable=SC2016 # literal text of the bootstrap, not an expansion
+assert_match 'script/verify" --target "\$target" --defer-shell-action' "$B"
+# shellcheck disable=SC2016 # literal text of the bootstrap, not an expansion
+[[ "$(grep -v '^[[:space:]]*\(#\|$\)' "$ROOT/bootstrap" | tail -1)" == 'login_shell_action "$shell_choice"' ]] || {
+  echo "bootstrap must end with login_shell_action, after \"bootstrap complete\"" >&2
+  exit 1
+}
+
+# login_shell_action prints the command, never runs it, and is silent when nothing is due.
+lsa() { # lsa SELECTED LOGIN_SHELL [PATH-PREFIX]
+  (
+    # shellcheck source=script/lib/common.sh
+    source "$ROOT/script/lib/common.sh"
+    PATH="${3:+$3:}$PATH" LOGIN_SHELL_OVERRIDE="$2" login_shell_action "$1"
+  ) 2>&1
+}
+out="$(lsa zsh /bin/bash)"
+[[ "$out" == *"[ACTION]"*"Login shell is /bin/bash"* && "$out" == *$'\n  chsh -s /usr/bin/zsh' ]] || {
+  printf 'login_shell_action must print the chsh line for zsh, got:\n%s\n' "$out" >&2
+  exit 1
+}
+[[ "$out" != *"/etc/shells"* ]] || {
+  echo "zsh is already in /etc/shells; no tee line expected" >&2
+  exit 1
+}
+[[ -z "$(lsa zsh /usr/bin/zsh)" ]] || {
+  echo "login_shell_action must be silent when the login shell is already zsh" >&2
+  exit 1
+}
+fakefish="$(mktemp -d)"
+printf '#!/bin/sh\n' >"$fakefish/fish"
+chmod +x "$fakefish/fish"
+out="$(lsa fish /bin/bash "$fakefish")"
+[[ "$out" == *"echo $fakefish/fish | sudo tee -a /etc/shells"* && "$out" == *"chsh -s $fakefish/fish"* ]] || {
+  printf 'login_shell_action must print the /etc/shells and chsh lines for fish, got:\n%s\n' "$out" >&2
+  exit 1
+}
+rm -rf "$fakefish"
+refute_match '^[[:space:]]*(sudo[[:space:]]+)?chsh' "$ROOT/script/lib/common.sh"
 # chezmoi status must be captured, not read through process substitution (a failure
 # there is swallowed); a foreign config is backed up before init rewrites it.
 refute_match '< <\(chezmoi status' "$B"
